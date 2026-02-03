@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { HashRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
@@ -18,6 +17,11 @@ import AlertsView from './components/AlertsView';
 import ConfigView from './components/ConfigView';
 import CloudSyncView from './components/CloudSyncView';
 import { generateId } from './utils';
+
+// --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
+// PEGA AQUÍ TUS CREDENCIALES DE SUPABASE PARA QUE LA APP CONECTE AUTOMÁTICAMENTE EN TODOS LOS DISPOSITIVOS
+const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; // Pega tu URL aquí (ej: https://xyz.supabase.co)
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpb2hycGpod25id2pvbW50cGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNzU5NTMsImV4cCI6MjA4NTY1MTk1M30.ZRBxweKA21PfSidL4UPScGU0llCtxTF9ugr4v_VQ3qg"; // Pega tu Anon Key aquí (ej: eyJhbGci...)
 
 const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
@@ -45,12 +49,12 @@ const App: React.FC = () => {
   const VITE_URL = getEnv('VITE_SUPABASE_URL');
   const VITE_KEY = getEnv('VITE_SUPABASE_KEY');
 
-  // --- Variables de entorno con fallback a localStorage ---
+  // --- Inicialización de Estado con prioridad: LocalStorage -> Hardcoded -> Env Vars ---
   const [supaUrl, setSupaUrl] = useState<string>(
-    localStorage.getItem(STORAGE_KEY_SUPA_URL) || VITE_URL
+    localStorage.getItem(STORAGE_KEY_SUPA_URL) || DEFAULT_SUPABASE_URL || VITE_URL || ''
   );
   const [supaKey, setSupaKey] = useState<string>(
-    localStorage.getItem(STORAGE_KEY_SUPA_KEY) || VITE_KEY
+    localStorage.getItem(STORAGE_KEY_SUPA_KEY) || DEFAULT_SUPABASE_KEY || VITE_KEY || ''
   );
   const [cloudUrl, setCloudUrl] = useState<string>(
     localStorage.getItem(STORAGE_KEY_CLOUD_URL) || ''
@@ -73,6 +77,8 @@ const App: React.FC = () => {
   const supabase: SupabaseClient | null = useMemo(() => {
     if (!supaUrl || !supaKey) return null;
     try {
+      // Validación básica para evitar crashes con URLs vacías o malformadas
+      if (!supaUrl.startsWith('http')) return null;
       return createClient(supaUrl, supaKey);
     } catch (e) {
       console.error("Error creating Supabase client", e);
@@ -137,12 +143,12 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error("Critical Sync Error:", e);
-      // No mostramos toast de error para no saturar si es solo falta de conexión inicial
     } finally {
       setIsSyncing(false);
     }
   }, [supabase]);
 
+  // Sincronización inicial
   useEffect(() => {
     if (EMAILJS_PUBLIC_KEY) emailjs.init(EMAILJS_PUBLIC_KEY);
     if (supabase) pullData();
