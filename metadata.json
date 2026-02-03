@@ -1,0 +1,7 @@
+{
+  "name": "Control de Reactivos",
+  "description": "Sistema multi usuario para control de stock y movimientos de Reactivos del Laboratorio Control Union Py",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
