@@ -4,6 +4,11 @@ export type Department = 'Fisicoquímico' | 'Microbiología' | 'Molecular';
 export type UserRole = 'ANALISTA' | 'GERENTE';
 export type TransactionType = 'IN' | 'OUT';
 
+export interface AnalystUser {
+  name: string;
+  department: Department;
+}
+
 export interface Reagent {
   id: string;
   name: string;

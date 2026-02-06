@@ -5,10 +5,10 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { 
   BeakerIcon, QueueListIcon, BellAlertIcon, PlusCircleIcon, MinusCircleIcon,
   ArrowRightOnRectangleIcon, HomeIcon, ChevronRightIcon, LockClosedIcon,
-  Cog6ToothIcon, ClockIcon, CloudIcon, ArrowPathIcon, WifiIcon, ExclamationTriangleIcon
+  Cog6ToothIcon, ClockIcon, CloudIcon, ArrowPathIcon, WifiIcon, ExclamationTriangleIcon, UserIcon
 } from '@heroicons/react/24/outline';
 
-import { Reagent, Transaction, UserRole } from './types';
+import { Reagent, Transaction, UserRole, AnalystUser } from './types';
 import InventoryView from './components/InventoryView';
 import InputForm from './components/InputForm';
 import OutputForm from './components/OutputForm';
@@ -19,9 +19,8 @@ import CloudSyncView from './components/CloudSyncView';
 import { generateId } from './utils';
 
 // --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
-// PEGA AQUÍ TUS CREDENCIALES DE SUPABASE PARA QUE LA APP CONECTE AUTOMÁTICAMENTE EN TODOS LOS DISPOSITIVOS
-const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; // Pega tu URL aquí (ej: https://xyz.supabase.co)
-const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpb2hycGpod25id2pvbW50cGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNzU5NTMsImV4cCI6MjA4NTY1MTk1M30.ZRBxweKA21PfSidL4UPScGU0llCtxTF9ugr4v_VQ3qg"; // Pega tu Anon Key aquí (ej: eyJhbGci...)
+const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; 
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpb2hycGpod25id2pvbW50cGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNzU5NTMsImV4cCI6MjA4NTY1MTk1M30.ZRBxweKA21PfSidL4UPScGU0llCtxTF9ugr4v_VQ3qg"; 
 
 const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
@@ -40,7 +39,6 @@ interface NotificationLog {
 }
 
 const App: React.FC = () => {
-  // Función auxiliar para obtener variables de entorno
   const getEnv = (key: string) => {
     // @ts-ignore
     return (import.meta.env?.[key]) || (typeof process !== 'undefined' ? process.env?.[key] : '') || '';
@@ -49,7 +47,7 @@ const App: React.FC = () => {
   const VITE_URL = getEnv('VITE_SUPABASE_URL');
   const VITE_KEY = getEnv('VITE_SUPABASE_KEY');
 
-  // --- Inicialización de Estado con prioridad: LocalStorage -> Hardcoded -> Env Vars ---
+  // --- Inicialización de Estado ---
   const [supaUrl, setSupaUrl] = useState<string>(
     localStorage.getItem(STORAGE_KEY_SUPA_URL) || DEFAULT_SUPABASE_URL || VITE_URL || ''
   );
@@ -61,15 +59,21 @@ const App: React.FC = () => {
   );
 
   const [role, setRole] = useState<UserRole | null>(null);
+  const [currentUser, setCurrentUser] = useState<AnalystUser | null>(null); // Usuario logueado
+
   const [reagents, setReagents] = useState<Reagent[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
-  const [analysts, setAnalysts] = useState<string[]>([]);
+  const [analysts, setAnalysts] = useState<AnalystUser[]>([]); // Lista de usuarios disponibles
   const [managerEmail, setManagerEmail] = useState<string>('');
   const [mgPassword, setMgPassword] = useState<string | null>(localStorage.getItem(STORAGE_KEY_MG_PASSWORD));
+  
+  // Auth States
   const [authInput, setAuthInput] = useState('');
   const [authError, setAuthError] = useState('');
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showManagerModal, setShowManagerModal] = useState(false);
+  const [showAnalystSelection, setShowAnalystSelection] = useState(false); // Modal para seleccionar analista
+  
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'alert' | 'error' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -77,7 +81,6 @@ const App: React.FC = () => {
   const supabase: SupabaseClient | null = useMemo(() => {
     if (!supaUrl || !supaKey) return null;
     try {
-      // Validación básica para evitar crashes con URLs vacías o malformadas
       if (!supaUrl.startsWith('http')) return null;
       return createClient(supaUrl, supaKey);
     } catch (e) {
@@ -96,7 +99,6 @@ const App: React.FC = () => {
     if (!supabase) return;
     setIsSyncing(true);
     try {
-      // Cargar configuración
       const { data: configData } = await supabase.from('config').select('*');
       if (configData) {
         const emailRow = configData.find(d => d.key === 'manager_email');
@@ -108,12 +110,19 @@ const App: React.FC = () => {
           localStorage.setItem(STORAGE_KEY_MG_PASSWORD, pwdRow.value);
         }
         if (analystsRow) {
-          try { setAnalysts(JSON.parse(analystsRow.value)); } 
+          try { 
+            const parsed = JSON.parse(analystsRow.value);
+            // Migración simple si antes eran strings
+            if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
+               setAnalysts(parsed.map((name: string) => ({ name, department: 'Fisicoquímico' })));
+            } else {
+               setAnalysts(parsed); 
+            }
+          } 
           catch { setAnalysts([]); }
         }
       }
 
-      // Cargar inventario
       const { data: reagentsData } = await supabase.from('reagents').select('*');
       if (reagentsData) {
         setReagents(reagentsData.map(r => ({
@@ -129,7 +138,6 @@ const App: React.FC = () => {
         })));
       }
 
-      // Cargar historial
       const { data: transData } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(100);
       if (transData) {
         setTransactions(transData.map(t => ({
@@ -148,7 +156,6 @@ const App: React.FC = () => {
     }
   }, [supabase]);
 
-  // Sincronización inicial
   useEffect(() => {
     if (EMAILJS_PUBLIC_KEY) emailjs.init(EMAILJS_PUBLIC_KEY);
     if (supabase) pullData();
@@ -167,17 +174,49 @@ const App: React.FC = () => {
     showToast("Ajustes sincronizados globalmente");
   };
 
-  const addAnalyst = async (name: string) => {
-    if (!name || analysts.includes(name)) return;
-    const newAnalysts = [...analysts, name];
+  const addAnalyst = async (user: AnalystUser) => {
+    const newAnalysts = [...analysts, user];
     setAnalysts(newAnalysts);
     await saveConfigKey('analysts', JSON.stringify(newAnalysts));
   };
 
   const removeAnalyst = async (name: string) => {
-    const newAnalysts = analysts.filter(a => a !== name);
+    const newAnalysts = analysts.filter(a => a.name !== name);
     setAnalysts(newAnalysts);
     await saveConfigKey('analysts', JSON.stringify(newAnalysts));
+  };
+
+  // --- Manejo de pedidos (Mark as Ordered) ---
+  const handleMarkAsOrdered = async (id: string) => {
+    const timestamp = new Date().toISOString();
+    const updatedReagents = reagents.map(r => 
+      r.id === id ? { ...r, isOrdered: true, lastUpdated: timestamp } : r
+    );
+    setReagents(updatedReagents);
+    showToast("Marcado como pedido", "success");
+
+    const targetReagent = updatedReagents.find(r => r.id === id);
+
+    if (supabase && targetReagent) {
+      await supabase.from('reagents').upsert({
+        id: targetReagent.id, name: targetReagent.name, brand: targetReagent.brand, presentation: targetReagent.presentation,
+        current_stock: targetReagent.currentStock, min_stock: targetReagent.minStock, department: targetReagent.department,
+        base_unit: targetReagent.baseUnit, container_type: targetReagent.containerType, quantity_per_container: targetReagent.quantityPerContainer,
+        expiry_date: targetReagent.expiryDate, is_ordered: true, last_updated: timestamp
+      });
+    }
+
+    // Sync to cloud optional, usually transaction based, but can trigger full sync
+    if (cloudUrl && targetReagent) {
+       try {
+        await fetch(cloudUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'SYNC_ALL', reagents: updatedReagents })
+        });
+      } catch (e) { console.error("Cloud sync failed"); }
+    }
   };
 
   // --- Manejo de transacciones ---
@@ -242,7 +281,6 @@ const App: React.FC = () => {
       });
     }
 
-    // Sincronización cloud
     if (cloudUrl) {
       try {
         await fetch(cloudUrl, {
@@ -255,7 +293,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Navegación móvil ---
   const MobileNav = () => {
     const location = useLocation();
     const navItems = [
@@ -277,7 +314,6 @@ const App: React.FC = () => {
     );
   };
 
-  // --- Pantalla de selección de rol ---
   if (!role) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4 text-center">
@@ -289,11 +325,11 @@ const App: React.FC = () => {
           <h1 className="text-3xl font-bold text-slate-800 mb-2">ReagentFlow</h1>
           <p className="text-slate-500 mb-8 font-medium italic">Gestión Laboratorial Centralizada</p>
           <div className="space-y-4">
-            <button onClick={() => setRole('ANALISTA')} className="w-full bg-slate-50 border-2 border-slate-200 hover:border-indigo-600 hover:text-indigo-600 text-slate-700 font-bold py-5 px-6 rounded-2xl transition-all flex items-center justify-between group">
+            <button onClick={() => setShowAnalystSelection(true)} className="w-full bg-slate-50 border-2 border-slate-200 hover:border-indigo-600 hover:text-indigo-600 text-slate-700 font-bold py-5 px-6 rounded-2xl transition-all flex items-center justify-between group">
               <div className="flex items-center gap-3"><QueueListIcon className="w-6 h-6" /><span>Analista</span></div>
               <ChevronRightIcon className="w-5 h-5 opacity-50 group-hover:opacity-100" />
             </button>
-            <button onClick={() => { setAuthInput(''); setAuthError(''); setShowAuthModal(true); }} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-5 px-6 rounded-2xl transition-all flex items-center justify-between group shadow-xl">
+            <button onClick={() => { setAuthInput(''); setAuthError(''); setShowManagerModal(true); }} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-5 px-6 rounded-2xl transition-all flex items-center justify-between group shadow-xl">
               <div className="flex items-center gap-3"><BellAlertIcon className="w-6 h-6" /><span>Gerente</span></div>
               <ChevronRightIcon className="w-5 h-5 opacity-50 group-hover:opacity-100" />
             </button>
@@ -308,9 +344,46 @@ const App: React.FC = () => {
             )}
           </div>
         </div>
+        
+        {/* Modal Selección Analista */}
+        {showAnalystSelection && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="bg-slate-50 p-6 border-b border-slate-100 flex items-center gap-3 text-left">
+                <div className="p-2 bg-indigo-100 rounded-lg"><UserIcon className="w-6 h-6 text-indigo-600" /></div>
+                <div><h3 className="font-bold text-slate-800">Seleccionar Usuario</h3><p className="text-xs text-slate-500">Acceso como Analista</p></div>
+              </div>
+              <div className="p-4 max-h-[60vh] overflow-y-auto scrollbar-hide space-y-2">
+                {analysts.length > 0 ? analysts.map((a, idx) => (
+                  <button 
+                    key={idx}
+                    onClick={() => {
+                      setCurrentUser(a);
+                      setRole('ANALISTA');
+                      setShowAnalystSelection(false);
+                      showToast(`Bienvenido/a, ${a.name}`);
+                    }}
+                    className="w-full p-4 bg-slate-50 hover:bg-indigo-50 border border-slate-100 hover:border-indigo-200 rounded-xl flex justify-between items-center group transition-all"
+                  >
+                    <div className="text-left">
+                      <p className="font-bold text-slate-700 group-hover:text-indigo-700">{a.name}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{a.department}</p>
+                    </div>
+                    <ChevronRightIcon className="w-5 h-5 text-slate-300 group-hover:text-indigo-500" />
+                  </button>
+                )) : (
+                   <p className="text-center text-slate-400 text-sm py-8 italic">No hay analistas registrados. Pida al gerente que los añada.</p>
+                )}
+              </div>
+              <div className="p-4 border-t border-slate-100 bg-slate-50">
+                 <button onClick={() => setShowAnalystSelection(false)} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* --- MODAL RESTAURADO --- */}
-        {showAuthModal && (
+        {/* Modal Auth Gerente */}
+        {showManagerModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="bg-slate-50 p-6 border-b border-slate-100 flex items-center gap-3 text-left">
@@ -321,15 +394,15 @@ const App: React.FC = () => {
                 e.preventDefault();
                 if (!mgPassword) {
                   if (authInput.length < 4) { setAuthError('Mínimo 4 caracteres'); return; }
-                  updateMgSettings(authInput); setRole('GERENTE'); setShowAuthModal(false);
+                  updateMgSettings(authInput); setRole('GERENTE'); setShowManagerModal(false);
                 }
-                else if (authInput === mgPassword) { setRole('GERENTE'); setShowAuthModal(false); }
+                else if (authInput === mgPassword) { setRole('GERENTE'); setShowManagerModal(false); }
                 else { setAuthError('Clave incorrecta'); }
               }} className="p-6 space-y-4">
                 <input autoFocus type="password" placeholder="****" className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all text-center text-2xl tracking-widest font-bold" value={authInput} onChange={(e) => setAuthInput(e.target.value)} />
                 {authError && <p className="text-red-600 text-xs font-bold text-center">{authError}</p>}
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => setShowAuthModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cerrar</button>
+                  <button type="button" onClick={() => setShowManagerModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cerrar</button>
                   <button type="submit" className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg">Entrar</button>
                 </div>
               </form>
@@ -340,7 +413,6 @@ const App: React.FC = () => {
     );
   }
 
-  // --- App principal ---
   return (
     <Router>
       <div className="flex flex-col min-h-screen bg-slate-50 pb-20 md:pb-0">
@@ -349,8 +421,6 @@ const App: React.FC = () => {
             <span className="font-bold text-sm">{toast.message}</span>
           </div>
         )}
-
-        {/* --- NAVBAR DE ESCRITORIO RESTAURADA --- */}
         <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm hidden md:block">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between h-16">
             <div className="flex items-center gap-2"><BeakerIcon className="h-8 w-8 text-indigo-600" /><span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-500">ReagentFlow</span></div>
@@ -366,6 +436,12 @@ const App: React.FC = () => {
                   <Link to="/config" className="text-slate-400 hover:text-indigo-600"><Cog6ToothIcon className="w-6 h-6" /></Link>
                 </>
               )}
+              {role === 'ANALISTA' && currentUser && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-lg">
+                   <UserIcon className="w-4 h-4 text-indigo-500"/>
+                   <span className="text-xs font-bold text-slate-600">{currentUser.name}</span>
+                </div>
+              )}
               <div className="h-6 w-[1px] bg-slate-200 mx-2"></div>
               <button onClick={() => pullData()} className={`p-2 rounded-lg transition-all ${isSyncing ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-600'}`}>
                 <ArrowPathIcon className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
@@ -374,23 +450,21 @@ const App: React.FC = () => {
                 {supabase ? <WifiIcon className="w-3.5 h-3.5" /> : <ExclamationTriangleIcon className="w-3.5 h-3.5" />}
                 <span className="text-[10px] font-black uppercase tracking-widest">{supabase ? 'Nube' : 'Sin Config'}</span>
               </div>
-              <button onClick={() => setRole(null)} className="text-slate-400 hover:text-red-600"><ArrowRightOnRectangleIcon className="w-6 h-6" /></button>
+              <button onClick={() => { setRole(null); setCurrentUser(null); }} className="text-slate-400 hover:text-red-600"><ArrowRightOnRectangleIcon className="w-6 h-6" /></button>
             </div>
           </div>
         </nav>
-
         <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
             <Route path="/" element={<InventoryView reagents={reagents} />} />
-            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} />} />
-            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} />} />
+            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} />} />
+            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} />} />
-            <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={() => {}} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
+            <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />
             <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} /> : <Navigate to="/" />} />
           </Routes>
         </main>
-
         <MobileNav />
       </div>
     </Router>

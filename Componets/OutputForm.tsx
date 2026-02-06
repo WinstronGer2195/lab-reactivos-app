@@ -1,30 +1,29 @@
+
 import React, { useState, useRef, useMemo } from 'react';
-import { Reagent, Transaction, AnalystUser } from '../types';
+import { Reagent, Transaction } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
 import { fileToBase64 } from '../utils';
 import { 
   CameraIcon, 
   ArrowPathIcon,
   MinusCircleIcon,
-  ExclamationTriangleIcon,
-  UserIcon
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/solid';
 
 interface Props {
   reagents: Reagent[];
-  analysts: AnalystUser[];
+  analysts: string[];
   onTransaction: (reagent: Partial<Reagent>, data: any) => void;
-  currentUser: AnalystUser | null;
 }
 
-const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, currentUser }) => {
+const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction }) => {
   const [loading, setLoading] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
   const [outputMode, setOutputMode] = useState<'CONTAINER' | 'QUANTITY'>('CONTAINER');
   const [formData, setFormData] = useState({
     containers: 0,
     amount: 0,
-    analystName: currentUser?.name || '',
+    analystName: '',
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,14 +47,14 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       const found = reagents.find(r => r.name.toLowerCase().includes(analysis.name.toLowerCase()) || analysis.name.toLowerCase().includes(r.name.toLowerCase()));
       if (found) setSelectedReagentId(found.id);
       else alert("Reactivo no encontrado.");
-    } catch (error) { alert("Error al analizar o reactivo no identificado."); } finally { setLoading(false); }
+    } catch (error) { alert("Error al analizar."); } finally { setLoading(false); }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReagent) return;
     if (!formData.analystName) {
-      alert("Error de sesión: Analista no identificado.");
+      alert("Seleccione un analista.");
       return;
     }
     if (totalAmountToWithdraw > selectedReagent.currentStock) {
@@ -73,7 +72,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     });
 
     setSelectedReagentId('');
-    setFormData(prev => ({ ...prev, containers: 0, amount: 0 }));
+    setFormData({ containers: 0, amount: 0, analystName: '' });
   };
 
   return (
@@ -82,9 +81,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
         <div className="bg-rose-600 p-6 text-white flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold">Registro de Egreso / Uso</h2>
-            <p className="text-rose-100 text-sm">
-                {currentUser ? `Analista: ${currentUser.name}` : 'Identifique el reactivo'}
-            </p>
+            <p className="text-rose-100 text-sm">Seleccione el reactivo y el analista responsable.</p>
           </div>
           <MinusCircleIcon className="w-8 h-8 opacity-40" />
         </div>
@@ -93,10 +90,9 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={loading} className="flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 py-4 px-4 rounded-2xl border border-rose-200 font-bold transition-all">
               {loading ? <ArrowPathIcon className="w-5 h-5 animate-spin" /> : <CameraIcon className="w-5 h-5" />}
-              {loading ? "Buscando..." : "Foto Cámara"}
+              {loading ? "Buscando..." : "Escanear Envase"}
             </button>
-            {/* capture="environment" added for direct camera access */}
-            <input type="file" ref={fileInputRef} className="hidden" capture="environment" accept="image/*" onChange={handleImageUpload} />
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
 
             <select className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-rose-500" value={selectedReagentId} onChange={(e) => setSelectedReagentId(e.target.value)}>
               <option value="">-- Seleccionar Reactivo --</option>
@@ -147,11 +143,16 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Analista Responsable (Auto)</label>
-                  <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 border-2 border-slate-200 rounded-xl text-slate-500 font-bold">
-                    <UserIcon className="w-5 h-5"/>
-                    {formData.analystName}
-                  </div>
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Analista Responsable</label>
+                  <select 
+                    required 
+                    className="w-full px-4 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-rose-500 outline-none font-bold text-slate-700"
+                    value={formData.analystName} 
+                    onChange={e => setFormData({...formData, analystName: e.target.value})}
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {analysts.map((a, i) => <option key={i} value={a}>{a}</option>)}
+                  </select>
                 </div>
               </div>
 

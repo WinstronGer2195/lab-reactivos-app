@@ -1,11 +1,11 @@
+
 import React, { useState } from 'react';
-import { LockClosedIcon, ShieldCheckIcon, EnvelopeIcon, UserPlusIcon, TrashIcon, UsersIcon } from '@heroicons/react/24/solid';
-import { AnalystUser, Department } from '../types';
+import { LockClosedIcon, ShieldCheckIcon, EnvelopeIcon, BellIcon, UserPlusIcon, TrashIcon, UsersIcon } from '@heroicons/react/24/solid';
 
 interface Props {
   updateMgSettings: (mg?: string, email?: string) => void;
-  analysts: AnalystUser[];
-  onAddAnalyst: (user: AnalystUser) => void;
+  analysts: string[];
+  onAddAnalyst: (name: string) => void;
   onRemoveAnalyst: (name: string) => void;
   currentMg: string | null;
   currentEmail: string;
@@ -14,8 +14,7 @@ interface Props {
 const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst, onRemoveAnalyst, currentMg, currentEmail }) => {
   const [mgInput, setMgInput] = useState('');
   const [emailInput, setEmailInput] = useState(currentEmail);
-  const [newAnalystName, setNewAnalystName] = useState('');
-  const [newAnalystDept, setNewAnalystDept] = useState<Department>('Fisicoquímico');
+  const [newAnalyst, setNewAnalyst] = useState('');
   const [success, setSuccess] = useState('');
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -28,15 +27,9 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
 
   const handleAddAnalyst = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newAnalystName.trim()) {
-      // Verificar duplicados
-      if (analysts.some(a => a.name.toLowerCase() === newAnalystName.trim().toLowerCase())) {
-        alert("Este nombre ya existe.");
-        return;
-      }
-      onAddAnalyst({ name: newAnalystName.trim(), department: newAnalystDept });
-      setNewAnalystName('');
-      setNewAnalystDept('Fisicoquímico');
+    if (newAnalyst.trim()) {
+      onAddAnalyst(newAnalyst.trim());
+      setNewAnalyst('');
       setSuccess('Analista añadido.');
       setTimeout(() => setSuccess(''), 2000);
     }
@@ -94,7 +87,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Gestión de Analistas</h1>
-          <p className="text-slate-500">Administre el personal y sus departamentos.</p>
+          <p className="text-slate-500">Administre el personal que utiliza la App.</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
@@ -104,41 +97,26 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
           </div>
           
           <div className="p-6 space-y-6">
-            <form onSubmit={handleAddAnalyst} className="space-y-3">
+            <form onSubmit={handleAddAnalyst} className="flex gap-2">
               <input 
                 type="text"
                 placeholder="Nombre del analista..."
-                required
-                className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none transition-all"
-                value={newAnalystName}
-                onChange={(e) => setNewAnalystName(e.target.value)}
+                className="flex-grow px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none transition-all"
+                value={newAnalyst}
+                onChange={(e) => setNewAnalyst(e.target.value)}
               />
-              <div className="flex gap-2">
-                <select 
-                  className="flex-grow px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none font-bold text-slate-600"
-                  value={newAnalystDept}
-                  onChange={(e) => setNewAnalystDept(e.target.value as Department)}
-                >
-                  <option value="Fisicoquímico">Fisicoquímico</option>
-                  <option value="Microbiología">Microbiología</option>
-                  <option value="Molecular">Molecular</option>
-                </select>
-                <button type="submit" className="bg-indigo-600 p-4 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-all">
-                  <UserPlusIcon className="w-5 h-5" />
-                </button>
-              </div>
+              <button type="submit" className="bg-indigo-600 p-4 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-all">
+                <UserPlusIcon className="w-5 h-5" />
+              </button>
             </form>
 
             <div className="space-y-2 max-h-[300px] overflow-y-auto scrollbar-hide">
               {analysts.length > 0 ? (
                 analysts.map((a, idx) => (
                   <div key={idx} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group">
-                    <div>
-                      <p className="font-bold text-slate-800">{a.name}</p>
-                      <p className="text-[10px] text-indigo-500 font-black uppercase tracking-widest">{a.department}</p>
-                    </div>
+                    <span className="font-bold text-slate-700">{a}</span>
                     <button 
-                      onClick={() => onRemoveAnalyst(a.name)}
+                      onClick={() => onRemoveAnalyst(a)}
                       className="p-2 text-slate-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <TrashIcon className="w-5 h-5" />
@@ -147,7 +125,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                 ))
               ) : (
                 <div className="py-10 text-center text-slate-400 italic text-sm">
-                  No hay analistas registrados.
+                  No hay analistas registrados. Añada uno arriba.
                 </div>
               )}
             </div>

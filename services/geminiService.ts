@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { AIAnalysisResult } from "../types";
 
@@ -19,7 +18,7 @@ export const analyzeReagentLabel = async (base64Image: string): Promise<AIAnalys
             },
           },
           {
-            text: "Analiza esta etiqueta de reactivo de laboratorio. Extrae el nombre del reactivo, la marca y clasifica su presentación como 'Líquido', 'Sólido' o 'Paquete'. Responde únicamente en formato JSON."
+            text: "Analiza esta etiqueta de reactivo de laboratorio. Extrae el nombre del reactivo, la marca y clasifica su presentación como 'Líquido', 'Sólido' o 'Paquete'. Responde únicamente en formato JSON puro, sin bloques de código markdown."
           }
         ]
       },
@@ -40,8 +39,12 @@ export const analyzeReagentLabel = async (base64Image: string): Promise<AIAnalys
       }
     });
 
-    // Access the text property directly on the response object
-    const text = response.text || "{}";
+    // Access the text property directly and clean markdown if present
+    let text = response.text || "{}";
+    
+    // Clean potential markdown blocks (```json ... ```)
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
     return JSON.parse(text) as AIAnalysisResult;
   } catch (error) {
     console.error("Error analyzing image with Gemini:", error);
