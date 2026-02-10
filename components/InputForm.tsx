@@ -9,7 +9,8 @@ import {
   PlusIcon,
   PencilSquareIcon,
   UserIcon,
-  BuildingOfficeIcon
+  BuildingOfficeIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/solid';
 
 interface Props {
@@ -129,17 +130,21 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       if (newPresentation === 'Sólido') newBaseUnit = 'g';
       if (newPresentation === 'Paquete') newBaseUnit = 'unidades';
 
+      // Convertir a mayúsculas lo que viene de la IA
+      const upperName = (analysis.name || '').toUpperCase();
+      const upperBrand = (analysis.brand || '').toUpperCase();
+
       setFormData(prev => ({
         ...prev,
-        name: analysis.name || '',
-        brand: analysis.brand || '',
+        name: upperName,
+        brand: upperBrand,
         presentation: newPresentation,
         baseUnit: newBaseUnit
       }));
 
       const existing = reagents.find(r => 
-        r.name.toLowerCase() === analysis.name.toLowerCase() && 
-        r.brand.toLowerCase() === analysis.brand.toLowerCase()
+        r.name.toUpperCase() === upperName && 
+        r.brand.toUpperCase() === upperBrand
       );
 
       if (existing) {
@@ -173,14 +178,48 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       alert("Error de sesión: No hay analista asignado.");
       return;
     }
+
+    // --- VALIDACIÓN DE DUPLICADOS (Solo para nuevos reactivos) ---
+    if (!isExisting) {
+      const normalizedName = formData.name.trim().toUpperCase();
+      const normalizedBrand = formData.brand.trim().toUpperCase();
+
+      const possibleDuplicate = reagents.find(r => {
+        const rName = r.name.toUpperCase();
+        const rBrand = r.brand.toUpperCase();
+        
+        // Coincidencia estricta de marca (porque es desplegable o tipificado con cuidado)
+        // Y coincidencia parcial de nombre (uno contiene al otro)
+        const brandMatch = rBrand === normalizedBrand;
+        const nameOverlap = rName.includes(normalizedName) || normalizedName.includes(rName);
+
+        return brandMatch && nameOverlap;
+      });
+
+      if (possibleDuplicate) {
+        const confirmCreate = window.confirm(
+          `⚠️ ¡POSIBLE DUPLICADO DETECTADO!\n\n` +
+          `Ya existe un reactivo similar en el inventario:\n` +
+          `Nombre: ${possibleDuplicate.name}\n` +
+          `Marca: ${possibleDuplicate.brand}\n` +
+          `Stock actual: ${possibleDuplicate.currentStock} ${possibleDuplicate.baseUnit}\n\n` +
+          `Está intentando crear: "${normalizedName}" (${normalizedBrand}).\n\n` +
+          `¿Está SEGURO de que desea crear uno nuevo en lugar de usar el existente?`
+        );
+        if (!confirmCreate) {
+          return; // Cancelar el submit
+        }
+      }
+    }
+    // -----------------------------------------------------------
     
     const finalReagentId = (isExisting) ? selectedReagentId : undefined;
 
     onTransaction(
       {
         id: finalReagentId,
-        name: formData.name,
-        brand: formData.brand,
+        name: formData.name.toUpperCase(), // Asegurar mayúsculas al guardar
+        brand: formData.brand.toUpperCase(), // Asegurar mayúsculas al guardar
         presentation: formData.presentation,
         department: formData.department,
         expiryDate: formData.expiryDate || 'N/A',
@@ -273,12 +312,27 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
               
               {/* Sección Nombre y Marca */}
               <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Nombre</label>
-                <input type="text" required disabled={isExisting} className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none disabled:opacity-60" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Nombre (Mayúsculas)</label>
+                <input 
+                  type="text" 
+                  required 
+                  disabled={isExisting} 
+                  className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none disabled:opacity-60 uppercase placeholder:normal-case" 
+                  placeholder="EJ: METANOL ABSOLUTO"
+                  value={formData.name} 
+                  onChange={e => setFormData({...formData, name: e.target.value.toUpperCase()})} 
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Marca</label>
-                <input type="text" required className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none" value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Marca (Mayúsculas)</label>
+                <input 
+                  type="text" 
+                  required 
+                  className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none uppercase placeholder:normal-case" 
+                  placeholder="EJ: CICARELLI"
+                  value={formData.brand} 
+                  onChange={e => setFormData({...formData, brand: e.target.value.toUpperCase()})} 
+                />
               </div>
 
               {/* Sección Presentación y Envase */}

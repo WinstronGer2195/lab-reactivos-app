@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   CircleStackIcon, 
@@ -32,7 +33,8 @@ CREATE TABLE IF NOT EXISTS public.reagents (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, brand TEXT NOT NULL, presentation TEXT NOT NULL,
     current_stock NUMERIC NOT NULL, min_stock NUMERIC NOT NULL, department TEXT NOT NULL,
     base_unit TEXT NOT NULL, container_type TEXT NOT NULL, quantity_per_container NUMERIC NOT NULL,
-    expiry_date TEXT NOT NULL, is_ordered BOOLEAN DEFAULT FALSE, last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    expiry_date TEXT NOT NULL, is_ordered BOOLEAN DEFAULT FALSE, last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_deleted BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS public.transactions (
@@ -49,32 +51,91 @@ CREATE POLICY "Full Access" ON public.config FOR ALL USING (true) WITH CHECK (tr
 CREATE POLICY "Full Access" ON public.reagents FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Full Access" ON public.transactions FOR ALL USING (true) WITH CHECK (true);`;
 
-const EXCEL_SCRIPT = `function doPost(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var data = JSON.parse(e.postData.contents);
-  var action = data.action;
+const EXCEL_SCRIPT = `/**
+ * CUADERNO ELECTRÓNICO DE LABORATORIO - BACKEND
+ * Diseñado para recuperación de desastres y auditoría completa.
+ */
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  lock.tryLock(10000);
   
-  if (action === "SAVE_CONFIG") {
-    var configSheet = ss.getSheetByName('Config') || ss.insertSheet('Config');
-    configSheet.clear();
-    configSheet.appendRow(["analysts", JSON.stringify(data.analysts)]);
-    configSheet.appendRow(["managerEmail", data.managerEmail]);
-    configSheet.appendRow(["password", data.password]);
-  }
-  
-  if (action === "SYNC_ALL") {
-    var invSheet = ss.getSheetByName('Inventario') || ss.insertSheet('Inventario');
-    invSheet.clear(); invSheet.appendRow(["ReagentJSON"]);
-    data.reagents.forEach(function(r) { invSheet.appendRow([JSON.stringify(r)]); });
-    
-    if (data.transaction) {
-      var moveSheet = ss.getSheetByName('Movimientos') || ss.insertSheet('Movimientos');
-      if (moveSheet.getLastRow() == 0) moveSheet.appendRow(['ID', 'Fecha', 'Tipo', 'Reactivo', 'Cant.', 'Unidad', 'Analista']);
-      var t = data.transaction;
-      moveSheet.appendRow([t.id, t.timestamp, t.type, t.reagentName, t.displayQuantity, t.displayUnit, t.analyst]);
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var data = JSON.parse(e.postData.contents);
+    var action = data.action;
+
+    // --- MÓDULO 1: GESTIÓN DE INVENTARIO (FOTO ACTUAL / RECUPERACIÓN) ---
+    // Esta hoja SIEMPRE muestra lo que deberías tener en estantería HOY.
+    if (action === "SYNC_INVENTORY_SNAPSHOT") {
+      var sheetName = "Inventario (Estado Actual)";
+      var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+      
+      // Limpiar y preparar cabeceras formateadas
+      sheet.clear();
+      var headers = [["ID SISTEMA", "NOMBRE REACTIVO", "MARCA", "DEPARTAMENTO", "STOCK TOTAL", "UNIDAD", "ENVASE", "STOCK MÍNIMO", "ESTADO PEDIDO", "ULT. ACT."]];
+      sheet.getRange(1, 1, 1, headers[0].length).setValues(headers).setFontWeight("bold").setBackground("#e0e7ff");
+      
+      if (data.reagents && data.reagents.length > 0) {
+        var rows = data.reagents.map(function(r) {
+          return [
+            r.id,
+            r.name,
+            r.brand,
+            r.department,
+            r.currentStock,
+            r.baseUnit,
+            r.containerType,
+            r.minStock,
+            r.isOrdered ? "PENDIENTE PEDIDO" : "OK",
+            r.lastUpdated
+          ];
+        });
+        sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+        // Ajustar anchos
+        sheet.autoResizeColumns(1, 10);
+      }
     }
+
+    // --- MÓDULO 2: AUDITORÍA DE MOVIMIENTOS (LOG INMUTABLE) ---
+    // Esta hoja guarda la historia. Nunca se borra.
+    if (action === "LOG_TRANSACTION" && data.transaction) {
+      var t = data.transaction;
+      var sheetName = "Auditoría (Historial)";
+      var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+      
+      if (sheet.getLastRow() == 0) {
+        var headers = [["FECHA/HORA", "ID TRANSACCIÓN", "TIPO MOVIMIENTO", "REACTIVO", "CANTIDAD", "UNIDAD", "ANALISTA RESPONSABLE"]];
+        sheet.getRange(1, 1, 1, headers[0].length).setValues(headers).setFontWeight("bold").setBackground("#fef3c7");
+        sheet.setFrozenRows(1);
+      }
+      
+      sheet.appendRow([
+        t.timestamp,
+        t.id,
+        t.type === 'IN' ? "INGRESO" : "SALIDA",
+        t.reagentName,
+        t.displayQuantity,
+        t.displayUnit,
+        t.analyst
+      ]);
+    }
+    
+    // --- MÓDULO 3: RESPALDO DE CONFIGURACIÓN ---
+    if (action === "SAVE_CONFIG") {
+      var sheet = ss.getSheetByName('Config_Backup') || ss.insertSheet('Config_Backup');
+      sheet.clear();
+      sheet.appendRow(["CLAVE", "VALOR"]);
+      sheet.appendRow(["analistas_json", JSON.stringify(data.analysts)]);
+      sheet.appendRow(["email_gerente", data.managerEmail]);
+    }
+
+    return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
+    
+  } catch (e) {
+    return ContentService.createTextOutput("ERROR: " + e.toString()).setMimeType(ContentService.MimeType.TEXT);
+  } finally {
+    lock.releaseLock();
   }
-  return ContentService.createTextOutput("OK").setMimeType(ContentService.MimeType.TEXT);
 }`;
 
 const CloudSyncView: React.FC<Props> = ({ 
@@ -115,7 +176,7 @@ const CloudSyncView: React.FC<Props> = ({
             <h1 className="text-4xl font-black uppercase tracking-tighter italic">Sincronización Híbrida</h1>
           </div>
           <p className="text-slate-400 font-medium max-w-2xl text-lg leading-relaxed">
-            <span className="text-white font-bold">Supabase</span> para sincronización multi-dispositivo en tiempo real y <span className="text-emerald-400 font-bold">Google Sheets</span> como respaldo de auditoría obligatorio.
+            <span className="text-white font-bold">Supabase</span> para sincronización multi-dispositivo en tiempo real y <span className="text-emerald-400 font-bold">Google Sheets</span> como Cuaderno Electrónico de Recuperación ante Desastres.
           </p>
         </div>
       </div>
@@ -127,7 +188,7 @@ const CloudSyncView: React.FC<Props> = ({
             <div className="p-6 border-b border-slate-100 bg-indigo-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CircleStackIcon className="w-6 h-6 text-indigo-600" />
-                <h2 className="font-bold text-slate-800 uppercase text-xs tracking-widest">Supabase (Tiempo Real)</h2>
+                <h2 className="font-bold text-slate-800 uppercase text-xs tracking-widest">Supabase (Base de Datos)</h2>
               </div>
               {supaUrl && <CheckCircleIcon className="w-5 h-5 text-emerald-500" />}
             </div>
@@ -158,7 +219,7 @@ const CloudSyncView: React.FC<Props> = ({
             <div className="p-6 border-b border-slate-100 bg-emerald-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <TableCellsIcon className="w-6 h-6 text-emerald-600" />
-                <h2 className="font-bold text-slate-800 uppercase text-xs tracking-widest">Excel (Archivo Auditoría)</h2>
+                <h2 className="font-bold text-slate-800 uppercase text-xs tracking-widest">Google Sheets (Cuaderno Electrónico)</h2>
               </div>
               {cloudUrl && <CheckCircleIcon className="w-5 h-5 text-emerald-500" />}
             </div>
@@ -170,7 +231,7 @@ const CloudSyncView: React.FC<Props> = ({
               </form>
               <div className="space-y-4 pt-4 border-t border-slate-100">
                 <div className="flex justify-between items-center">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Script para Google Sheets</p>
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Script Avanzado V2</p>
                    <button onClick={() => copy(EXCEL_SCRIPT, 'EXCEL')} className="text-[10px] font-black text-emerald-600 uppercase flex items-center gap-1 hover:underline">
                       {copied === 'EXCEL' ? 'Copiado' : 'Copiar Script'} <DocumentDuplicateIcon className="w-3 h-3"/>
                    </button>
@@ -187,9 +248,11 @@ const CloudSyncView: React.FC<Props> = ({
       <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm flex items-start gap-6">
         <div className="p-4 bg-amber-50 rounded-2xl shrink-0"><InformationCircleIcon className="w-8 h-8 text-amber-500" /></div>
         <div className="space-y-2">
-          <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Funcionamiento del Sistema Híbrido</h3>
+          <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">¿Cómo funciona el Cuaderno Electrónico?</h3>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Al realizar un movimiento, la app primero actualiza la <span className="font-bold text-indigo-600">Base de Datos</span> para que tus compañeros vean el stock al instante. Inmediatamente después, envía una copia del movimiento al <span className="font-bold text-emerald-600">Google Sheet</span> para registro de auditoría. Si no hay internet, la app intentará sincronizar cuando detecte conexión.
+            Hemos actualizado el sistema para crear dos hojas de seguridad. 
+            <br/>1. <span className="font-bold text-slate-700">Inventario (Estado Actual):</span> Es una foto exacta de lo que hay. Si eliminas o agregas un reactivo, esta hoja se reescribe completamente para estar siempre al día.
+            <br/>2. <span className="font-bold text-slate-700">Auditoría:</span> Es un historial inmutable de cada ingreso o salida.
           </p>
         </div>
       </div>

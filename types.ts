@@ -23,6 +23,7 @@ export interface Reagent {
   expiryDate: string; // ISO string or "N/A"
   isOrdered: boolean;
   lastUpdated: string;
+  isDeleted?: boolean; // Soft delete flag
 }
 
 export interface Transaction {

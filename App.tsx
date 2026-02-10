@@ -27,7 +27,10 @@ const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
 const STORAGE_KEY_CLOUD_URL = 'reagentflow_cloud_url';
 const STORAGE_KEY_MG_PASSWORD = 'reagentflow_mg_pwd';
 
-const EMAILJS_PUBLIC_KEY = "aMH7yh-WaX5jjiRUm";
+// --- CONFIGURACIÓN EMAILJS (¡REEMPLAZA ESTOS VALORES!) ---
+const EMAILJS_PUBLIC_KEY = "aMH7yh-WaX5jjiRUm"; 
+const EMAILJS_SERVICE_ID = "controlreactivo_lab"; // EJ: "service_gmail"
+const EMAILJS_TEMPLATE_ID = "template_czefw4r"; // EJ: "template_pedido"
 
 interface NotificationLog {
   id: string;
@@ -125,17 +128,23 @@ const App: React.FC = () => {
 
       const { data: reagentsData } = await supabase.from('reagents').select('*');
       if (reagentsData) {
-        setReagents(reagentsData.map(r => ({
-          ...r,
-          currentStock: parseFloat(r.current_stock),
-          minStock: parseFloat(r.min_stock),
-          quantityPerContainer: parseFloat(r.quantity_per_container),
-          lastUpdated: r.last_updated,
-          expiryDate: r.expiry_date,
-          containerType: r.container_type,
-          baseUnit: r.base_unit,
-          isOrdered: r.is_ordered
-        })));
+        // FILTRO SOFT DELETE: Solo mostrar los que NO están eliminados
+        const activeReagents = reagentsData
+          .map(r => ({
+            ...r,
+            currentStock: parseFloat(r.current_stock),
+            minStock: parseFloat(r.min_stock),
+            quantityPerContainer: parseFloat(r.quantity_per_container),
+            lastUpdated: r.last_updated,
+            expiryDate: r.expiry_date,
+            containerType: r.container_type,
+            baseUnit: r.base_unit,
+            isOrdered: r.is_ordered,
+            isDeleted: r.is_deleted // Mapeamos la columna de DB
+          }))
+          .filter(r => !r.isDeleted); // Filtramos localmente
+
+        setReagents(activeReagents);
       }
 
       const { data: transData } = await supabase.from('transactions').select('*').order('timestamp', { ascending: false }).limit(100);
@@ -186,16 +195,57 @@ const App: React.FC = () => {
     await saveConfigKey('analysts', JSON.stringify(newAnalysts));
   };
 
+  // --- FUNCIÓN DE ALERTA AUTOMÁTICA (Envío de correo) ---
+  const sendLowStockAlert = async (reagent: Reagent, timestamp: string) => {
+    if (!managerEmail) return; // No hacer nada si no hay correo configurado
+
+    try {
+        const templateParams = {
+          to_email: managerEmail,
+          reagent_name: reagent.name,
+          brand: reagent.brand,
+          current_stock: reagent.currentStock,
+          base_unit: reagent.baseUnit,
+          min_stock: reagent.minStock,
+          timestamp: new Date(timestamp).toLocaleString('es-ES')
+        };
+
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+        
+        setNotifications(prev => [{
+          id: generateId(),
+          reagentName: reagent.name,
+          timestamp: timestamp,
+          targetEmail: managerEmail,
+          stockLevel: `${reagent.currentStock} ${reagent.baseUnit}`,
+          status: 'SENT'
+        }, ...prev]);
+        
+        showToast("¡Stock Bajo! Alerta enviada al gerente", "alert");
+
+      } catch (error) {
+        console.error("EmailJS Error:", error);
+        setNotifications(prev => [{
+          id: generateId(),
+          reagentName: reagent.name,
+          timestamp: timestamp,
+          targetEmail: managerEmail,
+          stockLevel: `${reagent.currentStock} ${reagent.baseUnit}`,
+          status: 'FAILED'
+        }, ...prev]);
+      }
+  };
+
   // --- Manejo de pedidos (Mark as Ordered) ---
   const handleMarkAsOrdered = async (id: string) => {
     const timestamp = new Date().toISOString();
+    const targetReagent = reagents.find(r => r.id === id);
+    
     const updatedReagents = reagents.map(r => 
       r.id === id ? { ...r, isOrdered: true, lastUpdated: timestamp } : r
     );
     setReagents(updatedReagents);
-    showToast("Marcado como pedido", "success");
-
-    const targetReagent = updatedReagents.find(r => r.id === id);
+    showToast("Orden de compra registrada", "success");
 
     if (supabase && targetReagent) {
       await supabase.from('reagents').upsert({
@@ -205,17 +255,57 @@ const App: React.FC = () => {
         expiry_date: targetReagent.expiryDate, is_ordered: true, last_updated: timestamp
       });
     }
+  };
 
-    // Sync to cloud optional, usually transaction based, but can trigger full sync
-    if (cloudUrl && targetReagent) {
-       try {
+  // --- ELIMINACIÓN DE REACTIVOS (SOFT DELETE) ---
+  const handleDeleteReagent = async (id: string) => {
+    if (role !== 'GERENTE') return;
+    
+    const reagent = reagents.find(r => r.id === id);
+    if (!reagent) return;
+
+    // Usar tolerancia numérica para float (ej: 0.000000001 se considera 0)
+    if (reagent.currentStock > 0.01) {
+      showToast("No se puede eliminar: Tiene stock", "error");
+      return;
+    }
+
+    if (!window.confirm(`¿Archivar definitivamente "${reagent.name} - ${reagent.brand}"?\n\nEl reactivo desaparecerá del inventario y formularios, pero su historial de movimientos se conservará.`)) return;
+
+    // 1. Actualización Optimista de UI (Lo quitamos de la lista visible)
+    const updatedReagents = reagents.filter(r => r.id !== id);
+    setReagents(updatedReagents);
+    showToast("Reactivo archivado", "success");
+
+    // 2. Operaciones en Base de Datos (SOFT DELETE)
+    if (supabase) {
+      try {
+        // En lugar de DELETE, hacemos UPDATE setting is_deleted = true
+        // Esto mantiene la integridad referencial de los movimientos (Foreign Key)
+        const { error: reagentError } = await supabase
+            .from('reagents')
+            .update({ is_deleted: true })
+            .eq('id', id);
+
+        if (reagentError) throw reagentError;
+
+      } catch (error) {
+        console.error("Error archivando reactivo:", error);
+        showToast("Error al archivar en nube (¿Falta columna is_deleted?)", "error");
+        pullData(); // Revertir cambios si falló la DB
+      }
+    }
+
+    // 3. Sincronizar Excel (Snapshot) - Enviamos la lista actualizada SIN el eliminado
+    if (cloudUrl) {
+      try {
         await fetch(cloudUrl, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'SYNC_ALL', reagents: updatedReagents })
+          body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents: updatedReagents })
         });
-      } catch (e) { console.error("Cloud sync failed"); }
+      } catch (e) { console.error("Cloud snapshot update failed"); }
     }
   };
 
@@ -233,7 +323,7 @@ const App: React.FC = () => {
           ...updatedReagents[idx], 
           currentStock: updatedReagents[idx].currentStock + transactionData.quantity, 
           lastUpdated: timestamp,
-          isOrdered: false
+          isOrdered: false // Si entra stock, ya no está pedido
         };
         updatedReagents[idx] = finalReagent;
       } else {
@@ -250,16 +340,30 @@ const App: React.FC = () => {
           quantityPerContainer: reagent.quantityPerContainer || 1,
           expiryDate: reagent.expiryDate || 'N/A',
           isOrdered: false,
-          lastUpdated: timestamp
+          lastUpdated: timestamp,
+          isDeleted: false // Asegurar que no nazca borrado
         };
         updatedReagents.push(finalReagent);
         reagentId = finalReagent.id;
       }
     } else {
+      // TRANSACCIÓN DE SALIDA (OUT)
       const idx = updatedReagents.findIndex(r => r.id === reagentId);
       if (idx === -1) return;
-      finalReagent = { ...updatedReagents[idx], currentStock: Math.max(0, updatedReagents[idx].currentStock - transactionData.quantity), lastUpdated: timestamp };
+      
+      const previousStock = updatedReagents[idx].currentStock;
+      
+      finalReagent = { 
+        ...updatedReagents[idx], 
+        currentStock: Math.max(0, updatedReagents[idx].currentStock - transactionData.quantity), 
+        lastUpdated: timestamp 
+      };
       updatedReagents[idx] = finalReagent;
+
+      // DETECCIÓN DE STOCK BAJO PARA ALERTA AUTOMÁTICA
+      if (previousStock > finalReagent.minStock && finalReagent.currentStock <= finalReagent.minStock && !finalReagent.isOrdered) {
+         sendLowStockAlert(finalReagent, timestamp);
+      }
     }
 
     setReagents(updatedReagents);
@@ -272,7 +376,8 @@ const App: React.FC = () => {
         id: finalReagent.id, name: finalReagent.name, brand: finalReagent.brand, presentation: finalReagent.presentation,
         current_stock: finalReagent.currentStock, min_stock: finalReagent.minStock, department: finalReagent.department,
         base_unit: finalReagent.baseUnit, container_type: finalReagent.containerType, quantity_per_container: finalReagent.quantityPerContainer,
-        expiry_date: finalReagent.expiryDate, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated
+        expiry_date: finalReagent.expiryDate, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
+        is_deleted: false // Aseguramos que esté activo al hacer movimientos
       });
       await supabase.from('transactions').insert({
         id: newTransaction.id, reagent_id: newTransaction.reagentId, reagent_name: newTransaction.reagentName,
@@ -281,14 +386,25 @@ const App: React.FC = () => {
       });
     }
 
+    // --- SINCRONIZACIÓN CUADERNO ELECTRÓNICO (DUAL REQUEST) ---
     if (cloudUrl) {
       try {
-        await fetch(cloudUrl, {
+        fetch(cloudUrl, {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'SYNC_ALL', reagents: updatedReagents, transaction: newTransaction })
+          body: JSON.stringify({ action: 'LOG_TRANSACTION', transaction: newTransaction })
         });
+        
+        setTimeout(() => {
+          fetch(cloudUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents: updatedReagents })
+          });
+        }, 1000);
+        
       } catch (e) { console.error("Cloud sync failed"); }
     }
   };
@@ -456,7 +572,7 @@ const App: React.FC = () => {
         </nav>
         <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
-            <Route path="/" element={<InventoryView reagents={reagents} />} />
+            <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} />} />
             <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} />} />
             <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} />} />

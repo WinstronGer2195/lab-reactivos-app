@@ -1,13 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Reagent } from '../types';
-import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon } from '@heroicons/react/24/outline';
+import { Reagent, UserRole } from '../types';
+import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { formatDate } from '../utils';
 
 interface Props {
   reagents: Reagent[];
+  userRole: UserRole | null;
+  onDelete: (id: string) => void;
 }
 
-const InventoryView: React.FC<Props> = ({ reagents }) => {
+const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState<string>('all');
 
@@ -120,11 +122,20 @@ const InventoryView: React.FC<Props> = ({ reagents }) => {
                       <div className="text-[10px] text-indigo-500 font-black uppercase tracking-tighter">{group.department}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1 max-w-xs">
+                      <div className="flex flex-wrap gap-2 max-w-xs">
                         {group.brands.map((b, idx) => (
-                          <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                            {b.brand}: {b.stock}{group.baseUnit}
-                          </span>
+                          <div key={idx} className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-bold border group/item ${b.stock <= 0.01 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                            <span>{b.brand}: {b.stock}{group.baseUnit}</span>
+                            {userRole === 'GERENTE' && b.stock <= 0.01 && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}
+                                className="text-slate-400 hover:text-red-500 transition-colors p-0.5 ml-1"
+                                title="Eliminar reactivo vacío y su historial"
+                              >
+                                <TrashIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </td>
