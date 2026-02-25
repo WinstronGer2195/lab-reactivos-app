@@ -50,7 +50,11 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       const found = reagents.find(r => r.name.toLowerCase().includes(analysis.name.toLowerCase()) || analysis.name.toLowerCase().includes(r.name.toLowerCase()));
       if (found) setSelectedReagentId(found.id);
       else alert("Reactivo no encontrado.");
-    } catch (error) { alert("Error al analizar o reactivo no identificado."); } finally { setLoading(false); }
+    } catch (error: any) { 
+      alert(error.message || "Error al analizar o reactivo no identificado."); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {

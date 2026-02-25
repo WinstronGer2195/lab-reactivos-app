@@ -166,9 +166,9 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         setIsExisting(false);
         setIsCustomUnitMode(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Error analizando la etiqueta. Por favor intente de nuevo o ingrese manualmente.");
+      alert(error.message || "Error analizando la etiqueta. Por favor intente de nuevo o ingrese manualmente.");
     } finally {
       setLoading(false);
     }

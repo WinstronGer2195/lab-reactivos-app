@@ -3,8 +3,14 @@ import { AIAnalysisResult } from "../types";
 
 // Analyze reagent labels using Gemini
 export const analyzeReagentLabel = async (base64Image: string): Promise<AIAnalysisResult> => {
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey || apiKey === 'undefined') {
+    throw new Error("Falta la clave de API de Gemini (GEMINI_API_KEY). Si estás en Netlify, debes agregarla en Site configuration > Environment variables.");
+  }
+
   // Always use process.env.API_KEY directly in the constructor
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey });
   
   try {
     const response = await ai.models.generateContent({
