@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Reagent, Presentation, Department, Transaction, AnalystUser } from '../types';
+import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
-import { fileToBase64, generateId } from '../utils';
+import { fileToBase64, generateId, formatQuantity } from '../utils';
 import { 
   CameraIcon, 
   SparklesIcon, 
@@ -19,13 +19,14 @@ interface Props {
   transactions: Transaction[];
   onTransaction: (reagent: Partial<Reagent>, data: any) => void;
   currentUser: AnalystUser | null;
+  userRole: UserRole | null;
 }
 
 const BASE_UNITS_LIQUID = ['mL', 'L', 'uL'];
 const BASE_UNITS_SOLID = ['g', 'kg', 'mg'];
 const BASE_UNITS_PKG = ['unidades', 'Rx'];
 
-const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser }) => {
+const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole }) => {
   const [loading, setLoading] = useState(false);
   const [isExisting, setIsExisting] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
@@ -42,7 +43,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     baseUnit: 'mL',
     expiryDate: '',
     department: (currentUser?.department || 'Fisicoquímico') as Department,
-    analystName: currentUser?.name || '',
+    analystName: currentUser?.name || (userRole === 'GERENTE' ? 'GERENTE' : ''),
     minStock: 0
   });
 
@@ -92,6 +93,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     if (currentUser) {
         filtered = reagents.filter(r => r.department === currentUser.department);
     }
+    // Si es gerente, ve todos (no se filtra por departamento en el select inicial)
 
     // 2. Calcular frecuencia
     const usageCount: Record<string, number> = {};
@@ -110,8 +112,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
 
 
   const totalBaseQuantity = useMemo(() => {
-    return formData.quantityEntered * formData.quantityPerContainer;
-  }, [formData.quantityEntered, formData.quantityPerContainer]);
+    return formatQuantity(formData.quantityEntered * formData.quantityPerContainer, formData.presentation);
+  }, [formData.quantityEntered, formData.quantityPerContainer, formData.presentation]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -238,17 +240,23 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       }
     );
 
-    // Resetear formulario pero mantener usuario y depto
+    // Resetear formulario pero mantener usuario y depto si no es nuevo
     setFormData(prev => ({
       ...prev,
       name: '', brand: '', presentation: 'Líquido', containerType: 'Frascos',
       quantityEntered: 0, quantityPerContainer: 1, baseUnit: 'mL', 
-      expiryDate: '', minStock: 0
+      expiryDate: '', minStock: 0,
+      // Si es Gerente y estaba creando uno nuevo, resetear depto a default, si es analista mantener su depto
+      department: currentUser?.department || 'Fisicoquímico'
     }));
     setIsExisting(false);
     setSelectedReagentId('');
     setIsCustomUnitMode(false);
   };
+
+  // Lógica para saber si el campo departamento es editable
+  // Es editable SI: NO es un reactivo existente Y el usuario es GERENTE
+  const canEditDepartment = !isExisting && userRole === 'GERENTE';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -257,7 +265,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
           <div>
             <h2 className="text-xl font-bold">Registro de Ingreso</h2>
             <p className="text-indigo-100 text-sm">
-                {currentUser ? `Analista: ${currentUser.name} | Dept: ${currentUser.department}` : 'Complete los datos'}
+                {currentUser ? `Analista: ${currentUser.name} | Dept: ${currentUser.department}` : (userRole === 'GERENTE' ? 'Modo Gerente: Acceso Total' : 'Complete los datos')}
             </p>
           </div>
           <SparklesIcon className="w-8 h-8 opacity-40" />
@@ -285,7 +293,12 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                   setIsExisting(false);
                   setSelectedReagentId('');
                   setIsCustomUnitMode(false);
-                  setFormData(prev => ({ ...prev, name: '', brand: '', minStock: 0 }));
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    name: '', brand: '', minStock: 0, 
+                    // Si es gerente, resetear al default cuando elige "Nuevo" para que elija
+                    department: currentUser?.department || 'Fisicoquímico' 
+                  }));
                 } else {
                   setIsExisting(true);
                   const r = reagents.find(x => x.id === val);
@@ -408,17 +421,31 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 <input type="number" required min="0" step="0.01" className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none" value={formData.minStock || ''} onChange={e => setFormData({...formData, minStock: parseFloat(e.target.value) || 0})} />
               </div>
 
-              {/* Campos Bloqueados: Departamento y Analista */}
+              {/* Campos Departamento y Analista */}
               <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Departamento (Auto)</label>
-                <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 border-2 border-slate-200 rounded-xl text-slate-500 font-bold">
-                    <BuildingOfficeIcon className="w-5 h-5"/>
-                    {formData.department}
-                </div>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    Departamento {canEditDepartment ? '(Seleccionable)' : '(Auto)'}
+                </label>
+                {canEditDepartment ? (
+                    <select 
+                        className="w-full px-4 py-3 bg-white border-2 border-indigo-200 rounded-xl focus:border-indigo-500 outline-none font-bold text-slate-700"
+                        value={formData.department}
+                        onChange={e => setFormData({...formData, department: e.target.value as Department})}
+                    >
+                        <option value="Fisicoquímico">Fisicoquímico</option>
+                        <option value="Microbiología">Microbiología</option>
+                        <option value="Molecular">Molecular</option>
+                    </select>
+                ) : (
+                    <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 border-2 border-slate-200 rounded-xl text-slate-500 font-bold">
+                        <BuildingOfficeIcon className="w-5 h-5"/>
+                        {formData.department}
+                    </div>
+                )}
               </div>
 
               <div className="space-y-2 col-span-full md:col-span-1">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Analista Responsable (Auto)</label>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Analista Responsable</label>
                 <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 border-2 border-slate-200 rounded-xl text-slate-500 font-bold">
                     <UserIcon className="w-5 h-5"/>
                     {formData.analystName}

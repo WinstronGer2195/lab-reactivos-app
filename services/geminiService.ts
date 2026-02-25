@@ -18,7 +18,7 @@ export const analyzeReagentLabel = async (base64Image: string): Promise<AIAnalys
             },
           },
           {
-            text: "Analiza esta etiqueta de reactivo de laboratorio. Extrae el nombre del reactivo, la marca y clasifica su presentación como 'Líquido', 'Sólido' o 'Paquete'. Responde únicamente en formato JSON puro, sin bloques de código markdown."
+            text: "Analiza esta imagen de una etiqueta de reactivo de laboratorio con ALTA PRECISIÓN.\n\n1. NOMBRE: Extrae el nombre químico completo (ej: 'Metanol Absoluto', 'Ácido Sulfúrico 98%').\n2. MARCA: Extrae la marca del fabricante (ej: 'Cicarelli', 'Merck'). Si no es visible, usa 'GENERICO'.\n3. PRESENTACIÓN: Clasifica OBLIGATORIAMENTE en: 'Líquido', 'Sólido' o 'Paquete'.\n   - Si ves unidades de volumen (mL, L) -> 'Líquido'.\n   - Si ves unidades de masa (g, kg) -> 'Sólido'.\n\nResponde únicamente en formato JSON puro."
           }
         ]
       },

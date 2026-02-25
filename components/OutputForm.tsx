@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Reagent, Transaction, AnalystUser } from '../types';
+import { Reagent, Transaction, AnalystUser, UserRole } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
-import { fileToBase64 } from '../utils';
+import { fileToBase64, formatQuantity } from '../utils';
 import { 
   CameraIcon, 
   ArrowPathIcon,
@@ -15,16 +15,17 @@ interface Props {
   analysts: AnalystUser[];
   onTransaction: (reagent: Partial<Reagent>, data: any) => void;
   currentUser: AnalystUser | null;
+  userRole: UserRole | null;
 }
 
-const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, currentUser }) => {
+const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, currentUser, userRole }) => {
   const [loading, setLoading] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
   const [outputMode, setOutputMode] = useState<'CONTAINER' | 'QUANTITY'>('CONTAINER');
   const [formData, setFormData] = useState({
     containers: 0,
     amount: 0,
-    analystName: currentUser?.name || '',
+    analystName: currentUser?.name || (userRole === 'GERENTE' ? 'GERENTE' : ''),
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -33,9 +34,10 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
 
   const totalAmountToWithdraw = useMemo(() => {
     if (!selectedReagent) return 0;
-    return outputMode === 'CONTAINER' 
+    const val = outputMode === 'CONTAINER' 
       ? formData.containers * selectedReagent.quantityPerContainer 
       : formData.amount;
+    return formatQuantity(val, selectedReagent.presentation);
   }, [outputMode, formData, selectedReagent]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,7 +85,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
           <div>
             <h2 className="text-xl font-bold">Registro de Egreso / Uso</h2>
             <p className="text-rose-100 text-sm">
-                {currentUser ? `Analista: ${currentUser.name}` : 'Identifique el reactivo'}
+                {currentUser ? `Analista: ${currentUser.name}` : (userRole === 'GERENTE' ? 'Modo Gerente: Salida Autorizada' : 'Identifique el reactivo')}
             </p>
           </div>
           <MinusCircleIcon className="w-8 h-8 opacity-40" />

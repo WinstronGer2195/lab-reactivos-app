@@ -16,7 +16,7 @@ import HistoryView from './components/HistoryView';
 import AlertsView from './components/AlertsView';
 import ConfigView from './components/ConfigView';
 import CloudSyncView from './components/CloudSyncView';
-import { generateId } from './utils';
+import { generateId, formatQuantity } from './utils';
 
 // --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
 const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; 
@@ -132,7 +132,7 @@ const App: React.FC = () => {
         const activeReagents = reagentsData
           .map(r => ({
             ...r,
-            currentStock: parseFloat(r.current_stock),
+            currentStock: formatQuantity(parseFloat(r.current_stock), r.presentation),
             minStock: parseFloat(r.min_stock),
             quantityPerContainer: parseFloat(r.quantity_per_container),
             lastUpdated: r.last_updated,
@@ -321,7 +321,7 @@ const App: React.FC = () => {
       if (idx > -1) {
         finalReagent = { 
           ...updatedReagents[idx], 
-          currentStock: updatedReagents[idx].currentStock + transactionData.quantity, 
+          currentStock: formatQuantity(updatedReagents[idx].currentStock + transactionData.quantity, updatedReagents[idx].presentation), 
           lastUpdated: timestamp,
           isOrdered: false // Si entra stock, ya no está pedido
         };
@@ -332,7 +332,7 @@ const App: React.FC = () => {
           name: reagent.name!,
           brand: reagent.brand!,
           presentation: reagent.presentation!,
-          currentStock: transactionData.quantity,
+          currentStock: formatQuantity(transactionData.quantity, reagent.presentation!),
           minStock: reagent.minStock || 0,
           department: reagent.department!,
           baseUnit: reagent.baseUnit || 'ud',
@@ -355,7 +355,7 @@ const App: React.FC = () => {
       
       finalReagent = { 
         ...updatedReagents[idx], 
-        currentStock: Math.max(0, updatedReagents[idx].currentStock - transactionData.quantity), 
+        currentStock: formatQuantity(Math.max(0, updatedReagents[idx].currentStock - transactionData.quantity), updatedReagents[idx].presentation), 
         lastUpdated: timestamp 
       };
       updatedReagents[idx] = finalReagent;
@@ -573,8 +573,8 @@ const App: React.FC = () => {
         <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
             <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} />} />
-            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} />} />
-            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} />} />
+            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} />} />
+            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />

@@ -34,3 +34,15 @@ export const formatDateTime = (dateString: string) => {
 };
 
 export const generateId = () => Math.random().toString(36).substr(2, 9);
+
+export const formatQuantity = (value: number, presentation: string): number => {
+  const pres = (presentation || '').toLowerCase();
+  let decimals = 2; // Default (Liquids/Packets)
+  
+  if (pres.includes('sólido') || pres.includes('solido')) {
+    decimals = 4;
+  }
+  
+  const factor = Math.pow(10, decimals);
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+};

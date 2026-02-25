@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Reagent } from '../types';
-import { formatDate, formatDateTime } from '../utils';
+import { formatDate, formatDateTime, formatQuantity } from '../utils';
 import { 
   BellAlertIcon, 
   ShoppingBagIcon, 
@@ -26,6 +26,7 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
       baseUnit: string;
       isOrdered: boolean;
       brands: { brand: string, stock: number, id: string }[];
+      presentation: string;
     }> = {};
 
     reagents.forEach(r => {
@@ -37,7 +38,8 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
           minStock: r.minStock,
           baseUnit: r.baseUnit,
           isOrdered: r.isOrdered,
-          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id }]
+          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id }],
+          presentation: r.presentation
         };
       } else {
         consolidated[key].totalStock += r.currentStock;
@@ -47,7 +49,10 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
       }
     });
 
-    const lowStock = Object.values(consolidated).filter(c => c.totalStock <= c.minStock && !c.isOrdered);
+    const lowStock = Object.values(consolidated).map(c => ({
+      ...c,
+      totalStock: formatQuantity(c.totalStock, c.presentation)
+    })).filter(c => c.totalStock <= c.minStock && !c.isOrdered);
     return { lowStock };
   }, [reagents]);
 

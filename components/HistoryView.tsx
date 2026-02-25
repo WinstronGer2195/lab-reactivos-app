@@ -42,7 +42,7 @@ const HistoryView: React.FC<Props> = ({ transactions }) => {
                   </td>
                   <td className="px-6 py-4 font-semibold text-slate-800 text-sm">{t.reagentName}</td>
                   <td className="px-6 py-4 text-sm font-medium text-slate-700">{t.displayQuantity} {t.displayUnit}</td>
-                  <td className="px-6 py-4 text-sm font-bold text-slate-900">{t.quantity} <span className="text-[10px] text-slate-400 uppercase">SI</span></td>
+                  <td className="px-6 py-4 text-sm font-bold text-slate-900">{Math.round(t.quantity * 10000) / 10000} <span className="text-[10px] text-slate-400 uppercase">SI</span></td>
                   <td className="px-6 py-4 text-xs text-slate-500">{t.analyst}</td>
                 </tr>
               ))}

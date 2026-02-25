@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Reagent, UserRole } from '../types';
 import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon, TrashIcon } from '@heroicons/react/24/outline';
-import { formatDate } from '../utils';
+import { formatDate, formatQuantity } from '../utils';
 
 interface Props {
   reagents: Reagent[];
@@ -57,7 +57,10 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
       }
     });
 
-    return Object.values(groups).filter(g => {
+    return Object.values(groups).map(g => ({
+      ...g,
+      totalStock: formatQuantity(g.totalStock, g.presentation)
+    })).filter(g => {
       const matchesSearch = g.name.toLowerCase().includes(search.toLowerCase()) || 
                             g.brands.some(b => b.brand.toLowerCase().includes(search.toLowerCase()));
       const matchesDept = deptFilter === 'all' || g.department === deptFilter;
