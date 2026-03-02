@@ -36,6 +36,7 @@ export interface Transaction {
   displayUnit: string; // unit as entered (e.g., 'Frascos')
   analyst: string;
   timestamp: string;
+  verificationStatus?: 'Conforme' | 'No Conforme';
 }
 
 export interface AIAnalysisResult {

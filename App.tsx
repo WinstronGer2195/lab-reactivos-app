@@ -85,7 +85,11 @@ const App: React.FC = () => {
     if (!supaUrl || !supaKey) return null;
     try {
       if (!supaUrl.startsWith('http')) return null;
-      return createClient(supaUrl, supaKey);
+      return createClient(supaUrl, supaKey, {
+        auth: {
+          persistSession: false
+        }
+      });
     } catch (e) {
       console.error("Error creating Supabase client", e);
       return null;
@@ -155,7 +159,8 @@ const App: React.FC = () => {
           reagentName: t.reagent_name,
           displayQuantity: parseFloat(t.display_quantity),
           displayUnit: t.display_unit,
-          quantity: parseFloat(t.quantity)
+          quantity: parseFloat(t.quantity),
+          verificationStatus: t.verification_status
         })));
       }
     } catch (e) {
@@ -372,18 +377,30 @@ const App: React.FC = () => {
     showToast(`${transactionData.type === 'IN' ? 'Ingreso' : 'Salida'} registrada`);
 
     if (supabase) {
-      await supabase.from('reagents').upsert({
+      const { error: rError } = await supabase.from('reagents').upsert({
         id: finalReagent.id, name: finalReagent.name, brand: finalReagent.brand, presentation: finalReagent.presentation,
         current_stock: finalReagent.currentStock, min_stock: finalReagent.minStock, department: finalReagent.department,
         base_unit: finalReagent.baseUnit, container_type: finalReagent.containerType, quantity_per_container: finalReagent.quantityPerContainer,
         expiry_date: finalReagent.expiryDate, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
         is_deleted: false // Aseguramos que esté activo al hacer movimientos
       });
-      await supabase.from('transactions').insert({
+      if (rError) console.error("Error upserting reagent:", rError);
+
+      const { error: txError } = await supabase.from('transactions').insert({
         id: newTransaction.id, reagent_id: newTransaction.reagentId, reagent_name: newTransaction.reagentName,
         type: newTransaction.type, quantity: newTransaction.quantity, display_quantity: newTransaction.displayQuantity,
-        display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp
+        display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp,
+        verification_status: newTransaction.verificationStatus || null
       });
+      
+      if (txError) {
+        console.error("Error inserting transaction:", txError);
+        if (txError.message.includes('verification_status')) {
+            showToast("Falta la columna 'verification_status' en Supabase", "error");
+        } else {
+            showToast("Error al guardar transacción en la nube", "error");
+        }
+      }
     }
 
     // --- SINCRONIZACIÓN CUADERNO ELECTRÓNICO (DUAL REQUEST) ---
@@ -470,7 +487,12 @@ const App: React.FC = () => {
                 <div><h3 className="font-bold text-slate-800">Seleccionar Usuario</h3><p className="text-xs text-slate-500">Acceso como Analista</p></div>
               </div>
               <div className="p-4 max-h-[60vh] overflow-y-auto scrollbar-hide space-y-2">
-                {analysts.length > 0 ? analysts.map((a, idx) => (
+                {isSyncing ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                    <ArrowPathIcon className="w-8 h-8 animate-spin mb-2" />
+                    <p className="text-sm font-bold">Cargando analistas...</p>
+                  </div>
+                ) : analysts.length > 0 ? analysts.map((a, idx) => (
                   <button 
                     key={idx}
                     onClick={() => {
