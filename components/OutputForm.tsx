@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Reagent, Transaction, AnalystUser, UserRole } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
 import { fileToBase64, formatQuantity } from '../utils';
@@ -61,7 +61,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     try {
       const base64 = await fileToBase64(file);
       const analysis = await analyzeReagentLabel(base64);
-      const found = reagents.find(r => r.name.toLowerCase().includes(analysis.name.toLowerCase()) || analysis.name.toLowerCase().includes(r.name.toLowerCase()));
+      const found = reagents.find(r => (r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase()));
       if (found) setSelectedReagentId(found.id);
       else alert("Reactivo no encontrado.");
     } catch (error: any) { 
@@ -159,8 +159,8 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                   </div>
                   {reagents
                     .filter(r => 
-                      r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      r.brand.toLowerCase().includes(searchQuery.toLowerCase())
+                      (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      (r.brand || '').toLowerCase().includes(searchQuery.toLowerCase())
                     )
                     .map(r => (
                       <div 

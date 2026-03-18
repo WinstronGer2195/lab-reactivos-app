@@ -395,8 +395,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                   </div>
                   {sortedReagents
                     .filter(r => 
-                      r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      r.brand.toLowerCase().includes(searchQuery.toLowerCase())
+                      (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      (r.brand || '').toLowerCase().includes(searchQuery.toLowerCase())
                     )
                     .map(r => (
                       <div 
