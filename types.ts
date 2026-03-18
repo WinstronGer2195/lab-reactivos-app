@@ -21,6 +21,7 @@ export interface Reagent {
   containerType: string; // e.g., 'Frascos', 'Botellas', 'Sobres', 'N/A'
   quantityPerContainer: number; // e.g., 500 (if 500mL per bottle)
   expiryDate: string; // ISO string or "N/A"
+  lot?: string; // Lote
   isOrdered: boolean;
   lastUpdated: string;
   isDeleted?: boolean; // Soft delete flag
@@ -36,6 +37,7 @@ export interface Transaction {
   displayUnit: string; // unit as entered (e.g., 'Frascos')
   analyst: string;
   timestamp: string;
+  lot?: string;
   verificationStatus?: 'Conforme' | 'No Conforme';
 }
 
@@ -43,4 +45,9 @@ export interface AIAnalysisResult {
   name: string;
   brand: string;
   presentation: Presentation;
+}
+
+export interface ImageCacheItem {
+  base64Image: string;
+  result: AIAnalysisResult;
 }

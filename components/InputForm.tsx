@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole } from '../types';
+import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole, ImageCacheItem } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
 import { fileToBase64, generateId, formatQuantity } from '../utils';
 import { 
@@ -12,6 +12,9 @@ import {
   BuildingOfficeIcon,
   ExclamationTriangleIcon
 } from '@heroicons/react/24/solid';
+
+const CACHE_KEY = 'reagent_image_cache';
+const MAX_CACHE_ITEMS = 3;
 
 interface Props {
   reagents: Reagent[];
@@ -31,7 +34,12 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
   const [isExisting, setIsExisting] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
   const [isCustomUnitMode, setIsCustomUnitMode] = useState(false);
+  const [currentImageBase64, setCurrentImageBase64] = useState<string | null>(null);
   
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   // Form State
   const [formData, setFormData] = useState({
     name: '',
@@ -42,6 +50,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     quantityPerContainer: 1,
     baseUnit: 'mL',
     expiryDate: '',
+    lot: '',
     department: (currentUser?.department || 'Fisicoquímico') as Department,
     analystName: currentUser?.name || (userRole === 'GERENTE' ? 'GERENTE' : ''),
     minStock: 0,
@@ -87,6 +96,17 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     });
   }, [formData.presentation, isCustomUnitMode]);
 
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Calcular la frecuencia de uso para ordenar el dropdown
   const sortedReagents = useMemo(() => {
     // 1. Filtrar por departamento del usuario (si hay usuario logueado)
@@ -123,7 +143,17 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     setLoading(true);
     try {
       const base64 = await fileToBase64(file);
-      const analysis = await analyzeReagentLabel(base64);
+      setCurrentImageBase64(base64);
+      
+      let imageCache: ImageCacheItem[] = [];
+      try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) imageCache = JSON.parse(cached);
+      } catch (e) {
+        console.error("Error reading cache", e);
+      }
+
+      const analysis = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })), imageCache);
       
       const newPresentation = (analysis.presentation === 'Líquido' || analysis.presentation === 'Sólido' || analysis.presentation === 'Paquete') 
         ? analysis.presentation 
@@ -216,6 +246,32 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     }
     // -----------------------------------------------------------
     
+    // Update cache if we have an image
+    if (currentImageBase64) {
+      try {
+        let imageCache: ImageCacheItem[] = [];
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) imageCache = JSON.parse(cached);
+        
+        imageCache.unshift({
+          base64Image: currentImageBase64,
+          result: {
+            name: formData.name,
+            brand: formData.brand,
+            presentation: formData.presentation
+          }
+        });
+        
+        if (imageCache.length > MAX_CACHE_ITEMS) {
+          imageCache = imageCache.slice(0, MAX_CACHE_ITEMS);
+        }
+        
+        localStorage.setItem(CACHE_KEY, JSON.stringify(imageCache));
+      } catch (e) {
+        console.error("Error saving to cache", e);
+      }
+    }
+
     const finalReagentId = (isExisting) ? selectedReagentId : undefined;
 
     onTransaction(
@@ -226,6 +282,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         presentation: formData.presentation,
         department: formData.department,
         expiryDate: formData.expiryDate || 'N/A',
+        lot: formData.lot || '',
         minStock: formData.minStock,
         containerType: formData.containerType,
         quantityPerContainer: formData.quantityPerContainer,
@@ -238,6 +295,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         displayQuantity: formData.quantityEntered,
         displayUnit: formData.containerType,
         analyst: formData.analystName,
+        lot: formData.lot || '',
         verificationStatus: formData.department === 'Microbiología' ? formData.verificationStatus : undefined
       }
     );
@@ -247,7 +305,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       ...prev,
       name: '', brand: '', presentation: 'Líquido', containerType: 'Frascos',
       quantityEntered: 0, quantityPerContainer: 1, baseUnit: 'mL', 
-      expiryDate: '', minStock: 0,
+      expiryDate: '', lot: '', minStock: 0,
       verificationStatus: 'No Conforme',
       // Si es Gerente y estaba creando uno nuevo, resetear depto a default, si es analista mantener su depto
       department: currentUser?.department || 'Fisicoquímico'
@@ -255,6 +313,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     setIsExisting(false);
     setSelectedReagentId('');
     setIsCustomUnitMode(false);
+    setCurrentImageBase64(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Lógica para saber si el campo departamento es editable
@@ -287,40 +347,81 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
             </button>
             <input type="file" ref={fileInputRef} className="hidden" capture="environment" accept="image/*" onChange={handleImageUpload} />
 
-            <select 
-              className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-indigo-500"
-              value={isExisting ? selectedReagentId : 'new'}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'new') {
-                  setIsExisting(false);
-                  setSelectedReagentId('');
-                  setIsCustomUnitMode(false);
-                  setFormData(prev => ({ 
-                    ...prev, 
-                    name: '', brand: '', minStock: 0, 
-                    // Si es gerente, resetear al default cuando elige "Nuevo" para que elija
-                    department: currentUser?.department || 'Fisicoquímico' 
-                  }));
-                } else {
-                  setIsExisting(true);
-                  const r = reagents.find(x => x.id === val);
-                  if(r) {
-                    setSelectedReagentId(val);
-                    setIsCustomUnitMode(false);
-                    setFormData(prev => ({
-                      ...prev, name: r.name, brand: r.brand, presentation: r.presentation,
-                      baseUnit: r.baseUnit, containerType: r.containerType, 
-                      quantityPerContainer: r.quantityPerContainer, minStock: r.minStock,
-                      department: r.department
-                    }));
-                  }
-                }
-              }}
-            >
-              <option value="new">+ Nuevo Reactivo / Marca</option>
-              {sortedReagents.map(r => <option key={r.id} value={r.id}>{r.name} - {r.brand}</option>)}
-            </select>
+            <div className="relative" ref={dropdownRef}>
+              <div 
+                className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-indigo-500 cursor-pointer flex justify-between items-center h-full"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              >
+                <span className="truncate">
+                  {isExisting && selectedReagentId 
+                    ? (() => {
+                        const r = reagents.find(x => x.id === selectedReagentId);
+                        return r ? `${r.name} - ${r.brand}` : '+ Nuevo Reactivo / Marca';
+                      })()
+                    : '+ Nuevo Reactivo / Marca'}
+                </span>
+                <span className="text-slate-400 text-xs ml-2">▼</span>
+              </div>
+              
+              {isDropdownOpen && (
+                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                  <div className="sticky top-0 bg-white p-2 border-b border-slate-100">
+                    <input
+                      type="text"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 text-sm font-medium"
+                      placeholder="Buscar por nombre o marca..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                  </div>
+                  <div 
+                    className={`px-4 py-3 cursor-pointer hover:bg-indigo-50 font-bold ${!isExisting ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'}`}
+                    onClick={() => {
+                      setIsExisting(false);
+                      setSelectedReagentId('');
+                      setIsCustomUnitMode(false);
+                      setFormData(prev => ({ 
+                        ...prev, 
+                        name: '', brand: '', minStock: 0, 
+                        department: currentUser?.department || 'Fisicoquímico' 
+                      }));
+                      setIsDropdownOpen(false);
+                      setSearchQuery('');
+                    }}
+                  >
+                    + Nuevo Reactivo / Marca
+                  </div>
+                  {sortedReagents
+                    .filter(r => 
+                      r.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      r.brand.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                    .map(r => (
+                      <div 
+                        key={r.id} 
+                        className={`px-4 py-3 cursor-pointer hover:bg-slate-50 font-medium text-slate-700 border-t border-slate-50 ${selectedReagentId === r.id ? 'bg-slate-100' : ''}`}
+                        onClick={() => {
+                          setIsExisting(true);
+                          setSelectedReagentId(r.id);
+                          setIsCustomUnitMode(false);
+                          setFormData(prev => ({
+                            ...prev, name: r.name, brand: r.brand, presentation: r.presentation,
+                            baseUnit: r.baseUnit, containerType: r.containerType, 
+                            quantityPerContainer: r.quantityPerContainer, minStock: r.minStock,
+                            department: r.department
+                          }));
+                          setIsDropdownOpen(false);
+                          setSearchQuery('');
+                        }}
+                      >
+                        {r.name} - {r.brand}
+                      </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -415,6 +516,31 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                       <option value="CUSTOM" className="font-bold text-indigo-600">OTRO...</option>
                     </select>
                   )}
+                </div>
+              </div>
+
+              {/* Sección Lote y Vencimiento */}
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Lote</label>
+                <input type="text" placeholder="Ej: L-12345" className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none" value={formData.lot || ''} onChange={e => setFormData({...formData, lot: e.target.value})} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Fecha de Vencimiento</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="date" 
+                    className={`w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none ${!formData.expiryDate || formData.expiryDate === 'N/A' ? 'text-slate-400' : 'text-slate-700 font-bold'}`} 
+                    value={formData.expiryDate === 'N/A' ? '' : formData.expiryDate} 
+                    onChange={e => setFormData({...formData, expiryDate: e.target.value || 'N/A'})} 
+                  />
+                  <button 
+                    type="button" 
+                    className="px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors"
+                    onClick={() => setFormData({...formData, expiryDate: 'N/A'})}
+                  >
+                    N/A
+                  </button>
                 </div>
               </div>
 

@@ -41,6 +41,10 @@ interface NotificationLog {
   status: 'SENT' | 'FAILED' | 'PENDING';
 }
 
+let globalSupabaseClient: SupabaseClient | null = null;
+let globalSupaUrl = '';
+let globalSupaKey = '';
+
 const App: React.FC = () => {
   const getEnv = (key: string) => {
     // @ts-ignore
@@ -83,13 +87,21 @@ const App: React.FC = () => {
   // --- Inicialización de Supabase ---
   const supabase: SupabaseClient | null = useMemo(() => {
     if (!supaUrl || !supaKey) return null;
+    if (globalSupabaseClient && globalSupaUrl === supaUrl && globalSupaKey === supaKey) {
+      return globalSupabaseClient;
+    }
     try {
       if (!supaUrl.startsWith('http')) return null;
-      return createClient(supaUrl, supaKey, {
+      globalSupabaseClient = createClient(supaUrl, supaKey, {
         auth: {
-          persistSession: false
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
         }
       });
+      globalSupaUrl = supaUrl;
+      globalSupaKey = supaKey;
+      return globalSupabaseClient;
     } catch (e) {
       console.error("Error creating Supabase client", e);
       return null;
@@ -141,6 +153,7 @@ const App: React.FC = () => {
             quantityPerContainer: parseFloat(r.quantity_per_container),
             lastUpdated: r.last_updated,
             expiryDate: r.expiry_date,
+            lot: r.lot || '',
             containerType: r.container_type,
             baseUnit: r.base_unit,
             isOrdered: r.is_ordered,
@@ -160,6 +173,7 @@ const App: React.FC = () => {
           displayQuantity: parseFloat(t.display_quantity),
           displayUnit: t.display_unit,
           quantity: parseFloat(t.quantity),
+          lot: t.lot || '',
           verificationStatus: t.verification_status
         })));
       }
@@ -381,15 +395,21 @@ const App: React.FC = () => {
         id: finalReagent.id, name: finalReagent.name, brand: finalReagent.brand, presentation: finalReagent.presentation,
         current_stock: finalReagent.currentStock, min_stock: finalReagent.minStock, department: finalReagent.department,
         base_unit: finalReagent.baseUnit, container_type: finalReagent.containerType, quantity_per_container: finalReagent.quantityPerContainer,
-        expiry_date: finalReagent.expiryDate, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
+        expiry_date: finalReagent.expiryDate, lot: finalReagent.lot || null, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
         is_deleted: false // Aseguramos que esté activo al hacer movimientos
       });
-      if (rError) console.error("Error upserting reagent:", rError);
+      if (rError) {
+        console.error("Error upserting reagent:", rError);
+        if (rError.message.includes('lot')) {
+            showToast("Falta la columna 'lot' en Supabase (reagents)", "error");
+        }
+      }
 
       const { error: txError } = await supabase.from('transactions').insert({
         id: newTransaction.id, reagent_id: newTransaction.reagentId, reagent_name: newTransaction.reagentName,
         type: newTransaction.type, quantity: newTransaction.quantity, display_quantity: newTransaction.displayQuantity,
         display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp,
+        lot: newTransaction.lot || null,
         verification_status: newTransaction.verificationStatus || null
       });
       
@@ -397,6 +417,8 @@ const App: React.FC = () => {
         console.error("Error inserting transaction:", txError);
         if (txError.message.includes('verification_status')) {
             showToast("Falta la columna 'verification_status' en Supabase", "error");
+        } else if (txError.message.includes('lot')) {
+            showToast("Falta la columna 'lot' en Supabase (transactions)", "error");
         } else {
             showToast("Error al guardar transacción en la nube", "error");
         }
@@ -597,7 +619,7 @@ const App: React.FC = () => {
             <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} />} />
             <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} />} />
             <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
-            <Route path="/historial" element={<HistoryView transactions={transactions} />} />
+            <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />
             <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} /> : <Navigate to="/" />} />

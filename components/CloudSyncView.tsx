@@ -72,7 +72,7 @@ function doPost(e) {
       
       // Limpiar y preparar cabeceras formateadas
       sheet.clear();
-      var headers = [["ID SISTEMA", "NOMBRE REACTIVO", "MARCA", "DEPARTAMENTO", "STOCK TOTAL", "UNIDAD", "ENVASE", "STOCK MÍNIMO", "ESTADO PEDIDO", "ULT. ACT."]];
+      var headers = [["ID SISTEMA", "NOMBRE REACTIVO", "MARCA", "DEPARTAMENTO", "LOTE", "VENCIMIENTO", "STOCK TOTAL", "UNIDAD", "ENVASE", "STOCK MÍNIMO", "ESTADO PEDIDO", "ULT. ACT."]];
       sheet.getRange(1, 1, 1, headers[0].length).setValues(headers).setFontWeight("bold").setBackground("#e0e7ff");
       
       if (data.reagents && data.reagents.length > 0) {
@@ -82,6 +82,8 @@ function doPost(e) {
             r.name,
             r.brand,
             r.department,
+            r.lot || "N/A",
+            r.expiryDate || "N/A",
             r.currentStock,
             r.baseUnit,
             r.containerType,
@@ -92,7 +94,7 @@ function doPost(e) {
         });
         sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
         // Ajustar anchos
-        sheet.autoResizeColumns(1, 10);
+        sheet.autoResizeColumns(1, 12);
       }
     }
 
@@ -104,7 +106,7 @@ function doPost(e) {
       var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
       
       if (sheet.getLastRow() == 0) {
-        var headers = [["FECHA/HORA", "ID TRANSACCIÓN", "TIPO MOVIMIENTO", "REACTIVO", "CANTIDAD", "UNIDAD", "ANALISTA RESPONSABLE"]];
+        var headers = [["FECHA/HORA", "ID TRANSACCIÓN", "TIPO MOVIMIENTO", "REACTIVO", "LOTE", "CANTIDAD", "UNIDAD", "ANALISTA RESPONSABLE", "VERIFICACIÓN"]];
         sheet.getRange(1, 1, 1, headers[0].length).setValues(headers).setFontWeight("bold").setBackground("#fef3c7");
         sheet.setFrozenRows(1);
       }
@@ -114,9 +116,11 @@ function doPost(e) {
         t.id,
         t.type === 'IN' ? "INGRESO" : "SALIDA",
         t.reagentName,
+        t.lot || "N/A",
         t.displayQuantity,
         t.displayUnit,
-        t.analyst
+        t.analyst,
+        t.verificationStatus || "N/A"
       ]);
     }
     
