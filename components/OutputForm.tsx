@@ -98,7 +98,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="bg-white rounded-3xl shadow-xl border border-slate-200">
+      <div className="bg-white rounded-3xl shadow-xl border border-slate-200 min-h-[500px]">
         <div className="bg-rose-600 p-6 text-white flex justify-between items-center rounded-t-3xl">
           <div>
             <h2 className="text-xl font-bold">Registro de Egreso / Uso</h2>

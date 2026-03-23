@@ -3,18 +3,40 @@ import { AIAnalysisResult, ImageCacheItem } from "../types";
 
 // Analyze reagent labels using Gemini
 export const analyzeReagentLabel = async (base64Image: string, existingReagents?: {name: string, brand: string}[], imageCache?: ImageCacheItem[]): Promise<AIAnalysisResult> => {
-  const rawKey = process.env.GEMINI_API_KEY || '';
+  // Get API key from various possible sources
   let apiKey = '';
-  // Use a for loop to prevent static analysis by bundlers
-  for (let i = rawKey.length - 1; i >= 0; i--) {
-    apiKey += rawKey[i];
+  try {
+    // Try Vite env variables first (if defined)
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY || '';
+    }
+  } catch (e) {
+    console.warn("Error accessing import.meta.env:", e);
+  }
+
+  try {
+    if (!apiKey) {
+      apiKey = process.env.GEMINI_API_KEY || '';
+    }
+  } catch (e) {
+    // Ignore ReferenceError
+  }
+
+  try {
+    if (!apiKey) {
+      apiKey = process.env.API_KEY || '';
+    }
+  } catch (e) {
+    // Ignore ReferenceError
   }
   
   if (!apiKey || apiKey === 'undefined') {
-    throw new Error("Falta la clave de API de Gemini (GEMINI_API_KEY). Si estás en Netlify, debes agregarla en Site configuration > Environment variables.");
+    throw new Error("Falta la clave de API de Gemini. Configura VITE_GEMINI_API_KEY en tu entorno.");
   }
 
-  // Always use process.env.GEMINI_API_KEY directly in the constructor (or the decoded version)
+  // Always use the resolved apiKey
   const ai = new GoogleGenAI({ apiKey });
   
   try {
@@ -59,7 +81,7 @@ export const analyzeReagentLabel = async (base64Image: string, existingReagents?
     });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: {
         parts: parts
       },
@@ -89,6 +111,9 @@ export const analyzeReagentLabel = async (base64Image: string, existingReagents?
     return JSON.parse(text) as AIAnalysisResult;
   } catch (error) {
     console.error("Error analyzing image with Gemini:", error);
-    throw new Error("No se pudo analizar la imagen. Por favor, intenta de nuevo o ingresa los datos manualmente.");
+    if (error instanceof Error) {
+      throw new Error(`Error de análisis: ${error.message}`);
+    }
+    throw new Error(`Error desconocido: ${JSON.stringify(error)}`);
   }
 };
