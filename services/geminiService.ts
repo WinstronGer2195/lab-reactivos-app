@@ -80,30 +80,49 @@ export const analyzeReagentLabel = async (base64Image: string, existingReagents?
       text: `Analiza esta imagen de una etiqueta de reactivo de laboratorio con ALTA PRECISIÓN.${contextText}\n\nINSTRUCCIONES:\n1. NOMBRE: Extrae el nombre químico completo (ej: 'Metanol Absoluto', 'Ácido Sulfúrico 98%').\n2. MARCA: Extrae la marca del fabricante (ej: 'Cicarelli', 'Merck'). Si no es visible, usa 'GENERICO'.\n3. PRESENTACIÓN: Clasifica OBLIGATORIAMENTE en: 'Líquido', 'Sólido' o 'Paquete'.\n   - Si ves unidades de volumen (mL, L) -> 'Líquido'.\n   - Si ves unidades de masa (g, kg) -> 'Sólido'.\n\nResponde únicamente en formato JSON puro.`
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: {
-        parts: parts
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            brand: { type: Type.STRING },
-            presentation: { 
-              type: Type.STRING,
-              description: "Must be 'Líquido', 'Sólido', or 'Paquete'"
-            }
+    let response;
+    let retries = 3;
+    let delay = 1000;
+
+    while (retries > 0) {
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: {
+            parts: parts
           },
-          required: ["name", "brand", "presentation"]
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                brand: { type: Type.STRING },
+                presentation: { 
+                  type: Type.STRING,
+                  description: "Must be 'Líquido', 'Sólido', or 'Paquete'"
+                }
+              },
+              required: ["name", "brand", "presentation"]
+            }
+          }
+        });
+        break; // Success, exit loop
+      } catch (err: any) {
+        retries--;
+        const errStr = err instanceof Error ? err.message : JSON.stringify(err);
+        // Only retry on 503 (Service Unavailable) or 429 (Too Many Requests)
+        if (retries === 0 || (!errStr.includes('503') && !errStr.includes('429') && !errStr.includes('UNAVAILABLE'))) {
+          throw err;
         }
+        console.warn(`Gemini API overloaded (503/429). Retrying in ${delay}ms... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
       }
-    });
+    }
 
     // Access the text property directly and clean markdown if present
-    let text = response.text || "{}";
+    let text = response?.text || "{}";
     
     // Clean potential markdown blocks (```json ... ```)
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -111,6 +130,13 @@ export const analyzeReagentLabel = async (base64Image: string, existingReagents?
     return JSON.parse(text) as AIAnalysisResult;
   } catch (error) {
     console.error("Error analyzing image with Gemini:", error);
+    
+    const errorString = error instanceof Error ? error.message : JSON.stringify(error);
+    
+    if (errorString.includes('503') || errorString.includes('high demand') || errorString.includes('UNAVAILABLE') || errorString.includes('429')) {
+      throw new Error("Los servidores de Inteligencia Artificial están saturados temporalmente por alta demanda. Por favor, espera unos segundos y vuelve a intentarlo.");
+    }
+    
     if (error instanceof Error) {
       throw new Error(`Error de análisis: ${error.message}`);
     }
