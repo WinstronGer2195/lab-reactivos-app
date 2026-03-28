@@ -36,6 +36,14 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
 
   const selectedReagent = useMemo(() => reagents.find(r => r.id === selectedReagentId), [reagents, selectedReagentId]);
 
+  const totalStockForSelectedName = useMemo(() => {
+    if (!selectedReagent) return 0;
+    const total = reagents
+      .filter(r => r.name.toUpperCase() === selectedReagent.name.toUpperCase() && !r.isDeleted)
+      .reduce((sum, r) => sum + r.currentStock, 0);
+    return formatQuantity(total, selectedReagent.presentation);
+  }, [reagents, selectedReagent]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -89,7 +97,8 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       quantity: totalAmountToWithdraw,
       displayQuantity: outputMode === 'CONTAINER' ? formData.containers : formData.amount,
       displayUnit: outputMode === 'CONTAINER' ? selectedReagent.containerType : selectedReagent.baseUnit,
-      analyst: formData.analystName
+      analyst: formData.analystName,
+      lot: selectedReagent.lot
     });
 
     setSelectedReagentId('');
@@ -231,8 +240,8 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                 </div>
               </div>
 
-              {selectedReagent.currentStock - totalAmountToWithdraw <= selectedReagent.minStock && (
-                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex gap-3 animate-pulse"><ExclamationTriangleIcon className="w-6 h-6 text-amber-500 shrink-0" /><p className="text-[11px] text-amber-700 font-bold uppercase leading-tight">Aviso: El stock quedará en nivel crítico tras esta operación.</p></div>
+              {totalStockForSelectedName - totalAmountToWithdraw <= selectedReagent.minStock && (
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex gap-3 animate-pulse"><ExclamationTriangleIcon className="w-6 h-6 text-amber-500 shrink-0" /><p className="text-[11px] text-amber-700 font-bold uppercase leading-tight">Aviso: El stock total (todas las marcas) quedará en nivel crítico tras esta operación.</p></div>
               )}
 
               <button type="submit" className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-5 rounded-2xl shadow-xl transition-all active:scale-[0.98] uppercase tracking-widest">Registrar Salida</button>

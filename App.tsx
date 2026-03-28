@@ -370,8 +370,6 @@ const App: React.FC = () => {
       const idx = updatedReagents.findIndex(r => r.id === reagentId);
       if (idx === -1) return;
       
-      const previousStock = updatedReagents[idx].currentStock;
-      
       finalReagent = { 
         ...updatedReagents[idx], 
         currentStock: formatQuantity(Math.max(0, updatedReagents[idx].currentStock - transactionData.quantity), updatedReagents[idx].presentation), 
@@ -379,9 +377,28 @@ const App: React.FC = () => {
       };
       updatedReagents[idx] = finalReagent;
 
-      // DETECCIÓN DE STOCK BAJO PARA ALERTA AUTOMÁTICA
-      if (previousStock > finalReagent.minStock && finalReagent.currentStock <= finalReagent.minStock && !finalReagent.isOrdered) {
-         sendLowStockAlert(finalReagent, timestamp);
+      // DETECCIÓN DE STOCK BAJO GLOBAL (Sumando todas las marcas del mismo reactivo)
+      const sameNameReagents = updatedReagents.filter(r => 
+        r.name.toUpperCase() === finalReagent.name.toUpperCase() && !r.isDeleted
+      );
+      
+      const totalCurrentStock = formatQuantity(
+        sameNameReagents.reduce((sum, r) => sum + r.currentStock, 0), 
+        finalReagent.presentation
+      );
+      const totalPreviousStock = formatQuantity(
+        totalCurrentStock + transactionData.quantity, 
+        finalReagent.presentation
+      );
+      const isAnyBrandOrdered = sameNameReagents.some(r => r.isOrdered);
+
+      if (totalPreviousStock > finalReagent.minStock && totalCurrentStock <= finalReagent.minStock && !isAnyBrandOrdered) {
+         const alertReagent = {
+           ...finalReagent,
+           currentStock: totalCurrentStock,
+           brand: sameNameReagents.length > 1 ? 'Múltiples Marcas (Total)' : finalReagent.brand
+         };
+         sendLowStockAlert(alertReagent as Reagent, timestamp);
       }
     }
 

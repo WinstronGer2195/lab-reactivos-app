@@ -445,7 +445,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 <input 
                   type="text" 
                   required 
-                  className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none uppercase placeholder:normal-case" 
+                  disabled={isExisting}
+                  className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none disabled:opacity-60 uppercase placeholder:normal-case" 
                   placeholder="EJ: CICARELLI"
                   value={formData.brand} 
                   onChange={e => setFormData({...formData, brand: e.target.value.toUpperCase()})} 
