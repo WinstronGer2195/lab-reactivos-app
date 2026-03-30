@@ -64,8 +64,21 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
   }, [outputMode, formData, selectedReagent]);
 
   const fifoReagents = useMemo(() => {
+    // Sort reagents by expiry date (FEFO) to prioritize oldest/expiring reagents first
+    const sortedReagents = [...reagents].sort((a, b) => {
+      const aExpiry = a.expiryDate === 'N/A' || !a.expiryDate ? '9999-12-31' : a.expiryDate;
+      const bExpiry = b.expiryDate === 'N/A' || !b.expiryDate ? '9999-12-31' : b.expiryDate;
+      
+      if (aExpiry !== bExpiry) {
+        return new Date(aExpiry).getTime() - new Date(bExpiry).getTime();
+      }
+      
+      // If expiry dates are the same, prioritize the one with less stock to finish open bottles
+      return a.currentStock - b.currentStock;
+    });
+
     const map = new Map<string, Reagent>();
-    for (const r of reagents) {
+    for (const r of sortedReagents) {
       if (r.isDeleted || r.currentStock <= 0) continue;
       const nameKey = r.name.toUpperCase();
       if (!map.has(nameKey)) {
@@ -82,20 +95,30 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     try {
       const base64 = await fileToBase64(file);
       
+      // Sort reagents by expiry date (FEFO) to prioritize oldest/expiring reagents first
+      const sortedReagents = [...reagents].sort((a, b) => {
+        const aExpiry = a.expiryDate === 'N/A' || !a.expiryDate ? '9999-12-31' : a.expiryDate;
+        const bExpiry = b.expiryDate === 'N/A' || !b.expiryDate ? '9999-12-31' : b.expiryDate;
+        if (aExpiry !== bExpiry) {
+          return new Date(aExpiry).getTime() - new Date(bExpiry).getTime();
+        }
+        return a.currentStock - b.currentStock;
+      });
+
       // Try local OCR first (faster, no API dependency)
-      const localMatch = await findReagentInImageLocally(base64, reagents.filter(r => !r.isDeleted && r.currentStock > 0));
+      const localMatch = await findReagentInImageLocally(base64, sortedReagents.filter(r => !r.isDeleted && r.currentStock > 0));
       
       let found;
       if (localMatch) {
-        // Find the specific reagent ID based on the local match
-        found = reagents.find(r => 
+        // Find the specific reagent ID based on the local match (prioritize oldest if multiple match)
+        found = sortedReagents.find(r => 
           !r.isDeleted && r.currentStock > 0 &&
           r.name === localMatch.name && r.brand === localMatch.brand
         );
         
         // Fallback to just name if exact brand not found
         if (!found) {
-          found = reagents.find(r => 
+          found = sortedReagents.find(r => 
             !r.isDeleted && r.currentStock > 0 &&
             r.name === localMatch.name
           );
@@ -107,7 +130,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
         const analysis = await analyzeReagentLabel(base64);
         
         // Try to find exact match (name + brand) with stock > 0
-        found = reagents.find(r => 
+        found = sortedReagents.find(r => 
           !r.isDeleted && r.currentStock > 0 &&
           ((r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase())) &&
           ((r.brand || '').toLowerCase().includes((analysis.brand || '').toLowerCase()) || (analysis.brand || '').toLowerCase().includes((r.brand || '').toLowerCase()))
@@ -115,7 +138,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
 
         // Fallback to just name (FIFO) if exact brand not found or has 0 stock
         if (!found) {
-          found = reagents.find(r => 
+          found = sortedReagents.find(r => 
             !r.isDeleted && r.currentStock > 0 &&
             ((r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase()))
           );
