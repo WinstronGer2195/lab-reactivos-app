@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Reagent } from '../types';
-import { formatDate, formatDateTime, formatQuantity } from '../utils';
+import { formatDate, formatDateTime, formatQuantity, normalizeToUnit } from '../utils';
 import { 
   BellAlertIcon, 
   ShoppingBagIcon, 
@@ -25,7 +25,7 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
       minStock: number;
       baseUnit: string;
       isOrdered: boolean;
-      brands: { brand: string, stock: number, id: string }[];
+      brands: { brand: string, stock: number, id: string, originalUnit: string }[];
       presentation: string;
     }> = {};
 
@@ -38,13 +38,17 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
           minStock: r.minStock,
           baseUnit: r.baseUnit,
           isOrdered: r.isOrdered,
-          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id }],
+          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id, originalUnit: r.baseUnit }],
           presentation: r.presentation
         };
       } else {
-        consolidated[key].totalStock += r.currentStock;
-        consolidated[key].brands.push({ brand: r.brand, stock: r.currentStock, id: r.id });
-        consolidated[key].minStock = Math.max(consolidated[key].minStock, r.minStock);
+        const normalizedStock = normalizeToUnit(r.currentStock, r.baseUnit, consolidated[key].baseUnit);
+        consolidated[key].totalStock += normalizedStock;
+        consolidated[key].brands.push({ brand: r.brand, stock: r.currentStock, id: r.id, originalUnit: r.baseUnit });
+        
+        const normalizedMinStock = normalizeToUnit(r.minStock, r.baseUnit, consolidated[key].baseUnit);
+        consolidated[key].minStock = Math.max(consolidated[key].minStock, normalizedMinStock);
+        
         if (r.isOrdered) consolidated[key].isOrdered = true;
       }
     });
@@ -100,7 +104,7 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
                         {group.brands.map((b, idx) => (
                           <div key={idx} className="flex justify-between text-[11px] font-medium text-slate-600 bg-white p-2 rounded-lg border border-slate-100">
                             <span className="truncate mr-2">{b.brand}</span>
-                            <span className="font-bold whitespace-nowrap text-slate-800">{b.stock}{group.baseUnit}</span>
+                            <span className="font-bold whitespace-nowrap text-slate-800">{b.stock} {b.originalUnit}</span>
                           </div>
                         ))}
                       </div>

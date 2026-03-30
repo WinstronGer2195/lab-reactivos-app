@@ -76,3 +76,30 @@ export const formatQuantity = (value: number, presentation: string): number => {
   const factor = Math.pow(10, decimals);
   return Math.round((value + Number.EPSILON) * factor) / factor;
 };
+
+export const normalizeToUnit = (value: number, fromUnit: string, toUnit: string): number => {
+  if (!fromUnit || !toUnit) return value;
+  const from = fromUnit.toLowerCase().trim();
+  const to = toUnit.toLowerCase().trim();
+  
+  if (from === to) return value;
+
+  // Volume
+  if (from === 'l' && to === 'ml') return value * 1000;
+  if (from === 'ml' && to === 'l') return value / 1000;
+  if (from === 'ul' && to === 'ml') return value / 1000;
+  if (from === 'ml' && to === 'ul') return value * 1000;
+  if (from === 'l' && to === 'ul') return value * 1000000;
+  if (from === 'ul' && to === 'l') return value / 1000000;
+
+  // Mass
+  if (from === 'kg' && to === 'g') return value * 1000;
+  if (from === 'g' && to === 'kg') return value / 1000;
+  if (from === 'g' && to === 'mg') return value * 1000;
+  if (from === 'mg' && to === 'g') return value / 1000;
+  if (from === 'kg' && to === 'mg') return value * 1000000;
+  if (from === 'mg' && to === 'kg') return value / 1000000;
+
+  // If unknown conversion, just return the value (fallback)
+  return value;
+};

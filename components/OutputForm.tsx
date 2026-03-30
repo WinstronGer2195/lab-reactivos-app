@@ -1,7 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Reagent, Transaction, AnalystUser, UserRole } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
-import { fileToBase64, formatQuantity } from '../utils';
+import { findReagentInImageLocally } from '../services/ocrService';
+import { fileToBase64, formatQuantity, normalizeToUnit } from '../utils';
 import { 
   CameraIcon, 
   ArrowPathIcon,
@@ -40,7 +41,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     if (!selectedReagent) return 0;
     const total = reagents
       .filter(r => r.name.toUpperCase() === selectedReagent.name.toUpperCase() && !r.isDeleted)
-      .reduce((sum, r) => sum + r.currentStock, 0);
+      .reduce((sum, r) => sum + normalizeToUnit(r.currentStock, r.baseUnit, selectedReagent.baseUnit), 0);
     return formatQuantity(total, selectedReagent.presentation);
   }, [reagents, selectedReagent]);
 
@@ -62,16 +63,67 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     return formatQuantity(val, selectedReagent.presentation);
   }, [outputMode, formData, selectedReagent]);
 
+  const fifoReagents = useMemo(() => {
+    const map = new Map<string, Reagent>();
+    for (const r of reagents) {
+      if (r.isDeleted || r.currentStock <= 0) continue;
+      const nameKey = r.name.toUpperCase();
+      if (!map.has(nameKey)) {
+        map.set(nameKey, r);
+      }
+    }
+    return Array.from(map.values());
+  }, [reagents]);
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
     try {
       const base64 = await fileToBase64(file);
-      const analysis = await analyzeReagentLabel(base64);
-      const found = reagents.find(r => (r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase()));
+      
+      // Try local OCR first (faster, no API dependency)
+      const localMatch = await findReagentInImageLocally(base64, reagents.filter(r => !r.isDeleted && r.currentStock > 0));
+      
+      let found;
+      if (localMatch) {
+        // Find the specific reagent ID based on the local match
+        found = reagents.find(r => 
+          !r.isDeleted && r.currentStock > 0 &&
+          r.name === localMatch.name && r.brand === localMatch.brand
+        );
+        
+        // Fallback to just name if exact brand not found
+        if (!found) {
+          found = reagents.find(r => 
+            !r.isDeleted && r.currentStock > 0 &&
+            r.name === localMatch.name
+          );
+        }
+      }
+
+      // If local OCR failed to find a match, fallback to Gemini API
+      if (!found) {
+        const analysis = await analyzeReagentLabel(base64);
+        
+        // Try to find exact match (name + brand) with stock > 0
+        found = reagents.find(r => 
+          !r.isDeleted && r.currentStock > 0 &&
+          ((r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase())) &&
+          ((r.brand || '').toLowerCase().includes((analysis.brand || '').toLowerCase()) || (analysis.brand || '').toLowerCase().includes((r.brand || '').toLowerCase()))
+        );
+
+        // Fallback to just name (FIFO) if exact brand not found or has 0 stock
+        if (!found) {
+          found = reagents.find(r => 
+            !r.isDeleted && r.currentStock > 0 &&
+            ((r.name || '').toLowerCase().includes((analysis.name || '').toLowerCase()) || (analysis.name || '').toLowerCase().includes((r.name || '').toLowerCase()))
+          );
+        }
+      }
+
       if (found) setSelectedReagentId(found.id);
-      else alert("Reactivo no encontrado.");
+      else alert("Reactivo no encontrado en stock o sin existencias.");
     } catch (error: any) { 
       alert(error.message || "Error al analizar o reactivo no identificado."); 
     } finally { 
@@ -136,7 +188,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                   {selectedReagentId 
                     ? (() => {
                         const r = reagents.find(x => x.id === selectedReagentId);
-                        return r ? `${r.name} (${r.currentStock} ${r.baseUnit} disp.)` : '-- Seleccionar Reactivo --';
+                        return r ? `${r.name} - ${r.brand} (${r.currentStock} ${r.baseUnit} disp.)` : '-- Seleccionar Reactivo --';
                       })()
                     : '-- Seleccionar Reactivo --'}
                 </span>
@@ -166,7 +218,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                   >
                     -- Seleccionar Reactivo --
                   </div>
-                  {reagents
+                  {fifoReagents
                     .filter(r => 
                       (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                       (r.brand || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -181,7 +233,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                           setSearchQuery('');
                         }}
                       >
-                        {r.name} ({r.currentStock} {r.baseUnit} disp.)
+                        {r.name} - {r.brand} ({r.currentStock} {r.baseUnit} disp.)
                       </div>
                   ))}
                 </div>

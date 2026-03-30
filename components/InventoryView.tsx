@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Reagent, UserRole } from '../types';
 import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon, TrashIcon } from '@heroicons/react/24/outline';
-import { formatDate, formatQuantity } from '../utils';
+import { formatDate, formatQuantity, normalizeToUnit } from '../utils';
 
 interface Props {
   reagents: Reagent[];
@@ -25,7 +25,7 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
       quantityPerContainer: number;
       expiryDate: string;
       lastUpdated: string;
-      brands: { brand: string; stock: number; id: string }[];
+      brands: { brand: string; stock: number; id: string; originalUnit: string }[];
     }> = {};
 
     reagents.forEach(r => {
@@ -42,18 +42,20 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
           quantityPerContainer: r.quantityPerContainer,
           expiryDate: r.expiryDate,
           lastUpdated: r.lastUpdated,
-          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id }]
+          brands: [{ brand: r.brand, stock: r.currentStock, id: r.id, originalUnit: r.baseUnit }]
         };
       } else {
-        groups[key].totalStock += r.currentStock;
-        groups[key].brands.push({ brand: r.brand, stock: r.currentStock, id: r.id });
+        const normalizedStock = normalizeToUnit(r.currentStock, r.baseUnit, groups[key].baseUnit);
+        groups[key].totalStock += normalizedStock;
+        groups[key].brands.push({ brand: r.brand, stock: r.currentStock, id: r.id, originalUnit: r.baseUnit });
         if (r.expiryDate !== 'N/A' && (groups[key].expiryDate === 'N/A' || new Date(r.expiryDate) < new Date(groups[key].expiryDate))) {
           groups[key].expiryDate = r.expiryDate;
         }
         if (new Date(r.lastUpdated) > new Date(groups[key].lastUpdated)) {
           groups[key].lastUpdated = r.lastUpdated;
         }
-        groups[key].minStock = Math.max(groups[key].minStock, r.minStock);
+        const normalizedMinStock = normalizeToUnit(r.minStock, r.baseUnit, groups[key].baseUnit);
+        groups[key].minStock = Math.max(groups[key].minStock, normalizedMinStock);
       }
     });
 
@@ -128,7 +130,7 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
                       <div className="flex flex-wrap gap-2 max-w-xs">
                         {group.brands.map((b, idx) => (
                           <div key={idx} className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-bold border group/item ${b.stock <= 0.01 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                            <span>{b.brand}: {b.stock}{group.baseUnit}</span>
+                            <span>{b.brand}: {b.stock} {b.originalUnit}</span>
                             {userRole === 'GERENTE' && b.stock <= 0.01 && (
                               <button 
                                 onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}

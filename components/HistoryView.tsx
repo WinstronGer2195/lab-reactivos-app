@@ -105,7 +105,12 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
                   <td className="px-6 py-4 font-semibold text-slate-800 text-sm">{t.reagentName}</td>
                   <td className="px-6 py-4 text-xs font-medium text-slate-600">{t.lot || '-'}</td>
                   <td className="px-6 py-4 text-sm font-medium text-slate-700">{t.displayQuantity} {t.displayUnit}</td>
-                  <td className="px-6 py-4 text-sm font-bold text-slate-900">{Math.round(t.quantity * 10000) / 10000} <span className="text-[10px] text-slate-400 uppercase">SI</span></td>
+                  <td className="px-6 py-4 text-sm font-bold text-slate-900">
+                    {Math.round(t.quantity * 10000) / 10000}{' '}
+                    <span className="text-[10px] text-slate-400 uppercase">
+                      {reagents.find(r => r.id === t.reagentId)?.baseUnit || 'UNID.'}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-xs">
                     {t.verificationStatus ? (
                       <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded ${t.verificationStatus === 'Conforme' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>

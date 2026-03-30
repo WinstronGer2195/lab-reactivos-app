@@ -16,7 +16,7 @@ import HistoryView from './components/HistoryView';
 import AlertsView from './components/AlertsView';
 import ConfigView from './components/ConfigView';
 import CloudSyncView from './components/CloudSyncView';
-import { generateId, formatQuantity } from './utils';
+import { generateId, formatQuantity, normalizeToUnit } from './utils';
 
 // --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
 const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; 
@@ -383,7 +383,7 @@ const App: React.FC = () => {
       );
       
       const totalCurrentStock = formatQuantity(
-        sameNameReagents.reduce((sum, r) => sum + r.currentStock, 0), 
+        sameNameReagents.reduce((sum, r) => sum + normalizeToUnit(r.currentStock, r.baseUnit, finalReagent.baseUnit), 0), 
         finalReagent.presentation
       );
       const totalPreviousStock = formatQuantity(

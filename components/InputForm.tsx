@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole, ImageCacheItem } from '../types';
 import { analyzeReagentLabel } from '../services/geminiService';
+import { findReagentInImageLocally } from '../services/ocrService';
 import { fileToBase64, generateId, formatQuantity } from '../utils';
 import { 
   CameraIcon, 
@@ -145,27 +146,37 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       const base64 = await fileToBase64(file);
       setCurrentImageBase64(base64);
       
-      let imageCache: ImageCacheItem[] = [];
-      try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) imageCache = JSON.parse(cached);
-      } catch (e) {
-        console.error("Error reading cache", e);
-      }
-
-      const analysis = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })), imageCache);
+      // Try local OCR first (faster, no API dependency)
+      const localMatch = await findReagentInImageLocally(base64, reagents);
       
-      const newPresentation = (analysis.presentation === 'Líquido' || analysis.presentation === 'Sólido' || analysis.presentation === 'Paquete') 
-        ? analysis.presentation 
+      let analysisResult = null;
+      
+      if (localMatch) {
+        analysisResult = localMatch;
+      } else {
+        // Fallback to Gemini API if local OCR doesn't find a match
+        let imageCache: ImageCacheItem[] = [];
+        try {
+          const cached = localStorage.getItem(CACHE_KEY);
+          if (cached) imageCache = JSON.parse(cached);
+        } catch (e) {
+          console.error("Error reading cache", e);
+        }
+
+        analysisResult = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })), imageCache);
+      }
+      
+      const newPresentation = (analysisResult.presentation === 'Líquido' || analysisResult.presentation === 'Sólido' || analysisResult.presentation === 'Paquete') 
+        ? analysisResult.presentation 
         : 'Líquido';
 
       let newBaseUnit = 'mL';
       if (newPresentation === 'Sólido') newBaseUnit = 'g';
       if (newPresentation === 'Paquete') newBaseUnit = 'unidades';
 
-      // Convertir a mayúsculas lo que viene de la IA
-      const upperName = (analysis.name || '').toUpperCase();
-      const upperBrand = (analysis.brand || '').toUpperCase();
+      // Convertir a mayúsculas lo que viene de la IA/OCR
+      const upperName = (analysisResult.name || '').toUpperCase();
+      const upperBrand = (analysisResult.brand || '').toUpperCase();
 
       setFormData(prev => ({
         ...prev,
@@ -296,7 +307,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         displayUnit: formData.containerType,
         analyst: formData.analystName,
         lot: formData.lot || '',
-        verificationStatus: formData.department === 'Microbiología' ? formData.verificationStatus : undefined
+        verificationStatus: (formData.department === 'Microbiología' || formData.department === 'Molecular') ? formData.verificationStatus : undefined
       }
     );
 
@@ -506,8 +517,9 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                     </div>
                   ) : (
                     <select 
-                      className="w-24 border-2 border-slate-200 rounded-xl bg-slate-100 px-2 outline-none font-bold" 
+                      className="w-24 border-2 border-slate-200 rounded-xl bg-slate-100 px-2 outline-none font-bold disabled:opacity-60" 
                       value={formData.baseUnit} 
+                      disabled={isExisting}
                       onChange={e => {
                         if (e.target.value === 'CUSTOM') setIsCustomUnitMode(true);
                         else setFormData({...formData, baseUnit: e.target.value});
@@ -582,8 +594,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 </div>
               </div>
 
-              {/* Verificación Microbiológica */}
-              {formData.department === 'Microbiología' && (
+              {/* Verificación Microbiológica y Molecular */}
+              {(formData.department === 'Microbiología' || formData.department === 'Molecular') && (
                 <div className="space-y-2 col-span-full">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Verificación</label>
                   <button
