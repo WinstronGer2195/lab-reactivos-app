@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Reagent, Transaction, AnalystUser, UserRole } from '../types';
-import { analyzeReagentLabel } from '../services/geminiService';
+import { analyzeReagentLabel } from '../services/aiService';
 import { findReagentInImageLocally } from '../services/ocrService';
 import { fileToBase64, formatQuantity, normalizeToUnit } from '../utils';
 import { 

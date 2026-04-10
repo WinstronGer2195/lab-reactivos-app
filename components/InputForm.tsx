@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole, ImageCacheItem } from '../types';
-import { analyzeReagentLabel } from '../services/geminiService';
+import { analyzeReagentLabel } from '../services/aiService';
 import { findReagentInImageLocally } from '../services/ocrService';
 import { fileToBase64, generateId, formatQuantity } from '../utils';
 import { 
@@ -455,17 +455,17 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                   >
                     + Nuevo Reactivo (Nombre y Marca nuevos)
                   </div>
-                  {Object.entries(groupedReagents)
+                  {(Object.entries(groupedReagents) as [string, any][])
                     .filter(([name, items]) => 
                       name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      items.some(r => r.brand.toLowerCase().includes(searchQuery.toLowerCase()))
+                      items.some((r: any) => r.brand.toLowerCase().includes(searchQuery.toLowerCase()))
                     )
                     .map(([name, items]) => (
                       <div key={name} className="border-t border-slate-200">
                         <div className="px-4 py-2 bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                           {name}
                         </div>
-                        {items.map(r => (
+                        {items.map((r: any) => (
                           <div 
                             key={r.id} 
                             className={`px-4 py-3 cursor-pointer hover:bg-slate-50 font-medium text-slate-700 pl-6 flex justify-between items-center ${selectedReagentId === r.id ? 'bg-indigo-50 text-indigo-700' : ''}`}
