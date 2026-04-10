@@ -1,15 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { Reagent, UserRole } from '../types';
-import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, FunnelIcon, BeakerIcon, TrashIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { formatDate, formatQuantity, normalizeToUnit } from '../utils';
 
 interface Props {
   reagents: Reagent[];
   userRole: UserRole | null;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
 }
 
-const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
+const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }) => {
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState<string>('all');
 
@@ -131,14 +132,25 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete }) => {
                         {group.brands.map((b, idx) => (
                           <div key={idx} className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-bold border group/item ${b.stock <= 0.01 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                             <span>{b.brand}: {b.stock} {b.originalUnit}</span>
-                            {userRole === 'GERENTE' && b.stock <= 0.01 && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}
-                                className="text-slate-400 hover:text-red-500 transition-colors p-0.5 ml-1"
-                                title="Eliminar reactivo vacío y su historial"
-                              >
-                                <TrashIcon className="w-3.5 h-3.5" />
-                              </button>
+                            {userRole === 'GERENTE' && (
+                              <div className="flex items-center ml-1">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); onEdit(b.id); }}
+                                  className="text-slate-400 hover:text-indigo-500 transition-colors p-0.5"
+                                  title="Editar reactivo"
+                                >
+                                  <PencilIcon className="w-3.5 h-3.5" />
+                                </button>
+                                {b.stock <= 0.01 && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); onDelete(b.id); }}
+                                    className="text-slate-400 hover:text-red-500 transition-colors p-0.5 ml-1"
+                                    title="Eliminar reactivo vacío y su historial"
+                                  >
+                                    <TrashIcon className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
                         ))}

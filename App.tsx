@@ -16,6 +16,7 @@ import HistoryView from './components/HistoryView';
 import AlertsView from './components/AlertsView';
 import ConfigView from './components/ConfigView';
 import CloudSyncView from './components/CloudSyncView';
+import EditReagentModal from './components/EditReagentModal';
 import { generateId, formatQuantity, normalizeToUnit } from './utils';
 
 // --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
@@ -80,6 +81,7 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [showAnalystSelection, setShowAnalystSelection] = useState(false); // Modal para seleccionar analista
+  const [editingReagentId, setEditingReagentId] = useState<string | null>(null);
   
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'alert' | 'error' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -325,6 +327,62 @@ const App: React.FC = () => {
           body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents: updatedReagents })
         });
       } catch (e) { console.error("Cloud snapshot update failed"); }
+    }
+  };
+
+  // --- EDICIÓN DE REACTIVOS (GERENTE) ---
+  const handleEditReagent = async (updatedReagent: Reagent) => {
+    if (role !== 'GERENTE') return;
+
+    const timestamp = new Date().toISOString();
+    const oldReagent = reagents.find(r => r.id === updatedReagent.id);
+    if (!oldReagent) return;
+
+    // Actualización optimista
+    const updatedReagents = reagents.map(r => r.id === updatedReagent.id ? { ...updatedReagent, lastUpdated: timestamp } : r);
+    setReagents(updatedReagents);
+    setEditingReagentId(null);
+    showToast("Reactivo actualizado", "success");
+
+    // Registrar transacción de ajuste
+    const newTransaction: Transaction = {
+      id: generateId(),
+      reagentId: updatedReagent.id,
+      reagentName: updatedReagent.name,
+      type: 'ADJUSTMENT',
+      quantity: updatedReagent.currentStock, // Guardamos el stock final como cantidad
+      displayQuantity: updatedReagent.currentStock,
+      displayUnit: updatedReagent.baseUnit,
+      analyst: 'GERENTE (Ajuste)',
+      timestamp,
+      lot: updatedReagent.lot || '',
+      verificationStatus: undefined
+    };
+    setTransactions([newTransaction, ...transactions]);
+
+    if (supabase) {
+      try {
+        const { error: rError } = await supabase.from('reagents').upsert({
+          id: updatedReagent.id, name: updatedReagent.name, brand: updatedReagent.brand, presentation: updatedReagent.presentation,
+          current_stock: updatedReagent.currentStock, min_stock: updatedReagent.minStock, department: updatedReagent.department,
+          base_unit: updatedReagent.baseUnit, container_type: updatedReagent.containerType, quantity_per_container: updatedReagent.quantityPerContainer,
+          expiry_date: updatedReagent.expiryDate, lot: updatedReagent.lot || null, is_ordered: updatedReagent.isOrdered, last_updated: timestamp,
+          is_deleted: false
+        });
+        if (rError) throw rError;
+
+        const { error: txError } = await supabase.from('transactions').insert({
+          id: newTransaction.id, reagent_id: newTransaction.reagentId, reagent_name: newTransaction.reagentName,
+          type: newTransaction.type, quantity: newTransaction.quantity, display_quantity: newTransaction.displayQuantity,
+          display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp,
+          lot: newTransaction.lot || null, verification_status: newTransaction.verificationStatus || null
+        });
+        if (txError) throw txError;
+      } catch (error) {
+        console.error("Error editando reactivo:", error);
+        showToast("Error al guardar cambios en la nube", "error");
+        pullData(); // Revertir si falla
+      }
     }
   };
 
@@ -649,7 +707,7 @@ const App: React.FC = () => {
         </nav>
         <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
-            <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} />} />
+            <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} onEdit={setEditingReagentId} />} />
             <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} />} />
             <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} />} />
@@ -659,6 +717,13 @@ const App: React.FC = () => {
           </Routes>
         </main>
         <MobileNav />
+        {editingReagentId && (
+          <EditReagentModal
+            reagent={reagents.find(r => r.id === editingReagentId)!}
+            onClose={() => setEditingReagentId(null)}
+            onSave={handleEditReagent}
+          />
+        )}
       </div>
     </Router>
   );

@@ -98,8 +98,8 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
                 <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4 text-xs text-slate-500">{formatDateTime(t.timestamp)}</td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded ${t.type === 'IN' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
-                      {t.type === 'IN' ? <ArrowDownCircleIcon className="w-3 h-3" /> : <ArrowUpCircleIcon className="w-3 h-3" />} {t.type === 'IN' ? 'Entrada' : 'Salida'}
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded ${t.type === 'IN' ? 'text-emerald-600 bg-emerald-50' : t.type === 'OUT' ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50'}`}>
+                      {t.type === 'IN' ? <ArrowDownCircleIcon className="w-3 h-3" /> : t.type === 'OUT' ? <ArrowUpCircleIcon className="w-3 h-3" /> : <ArrowDownCircleIcon className="w-3 h-3" />} {t.type === 'IN' ? 'Entrada' : t.type === 'OUT' ? 'Salida' : 'Ajuste'}
                     </span>
                   </td>
                   <td className="px-6 py-4 font-semibold text-slate-800 text-sm">{t.reagentName}</td>

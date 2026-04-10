@@ -2,7 +2,7 @@
 export type Presentation = 'Líquido' | 'Sólido' | 'Paquete';
 export type Department = 'Fisicoquímico' | 'Microbiología' | 'Molecular';
 export type UserRole = 'ANALISTA' | 'GERENTE';
-export type TransactionType = 'IN' | 'OUT';
+export type TransactionType = 'IN' | 'OUT' | 'ADJUSTMENT';
 
 export interface AnalystUser {
   name: string;
