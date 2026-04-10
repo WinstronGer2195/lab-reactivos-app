@@ -79,9 +79,19 @@ export const formatQuantity = (value: number, presentation: string): number => {
 
 export const normalizeToUnit = (value: number, fromUnit: string, toUnit: string): number => {
   if (!fromUnit || !toUnit) return value;
-  const from = fromUnit.toLowerCase().trim();
-  const to = toUnit.toLowerCase().trim();
+  let from = fromUnit.toLowerCase().trim();
+  let to = toUnit.toLowerCase().trim();
   
+  // Normalize common full names to symbols
+  if (from === 'litros' || from === 'litro') from = 'l';
+  if (to === 'litros' || to === 'litro') to = 'l';
+  if (from === 'kilogramos' || from === 'kilogramo') from = 'kg';
+  if (to === 'kilogramos' || to === 'kilogramo') to = 'kg';
+  if (from === 'mililitros' || from === 'mililitro') from = 'ml';
+  if (to === 'mililitros' || to === 'mililitro') to = 'ml';
+  if (from === 'gramos' || from === 'gramo') from = 'g';
+  if (to === 'gramos' || to === 'gramo') to = 'g';
+
   if (from === to) return value;
 
   // Volume

@@ -338,9 +338,25 @@ const App: React.FC = () => {
     if (transactionData.type === 'IN') {
       const idx = updatedReagents.findIndex(r => r.id === reagentId);
       if (idx > -1) {
+        let newStock = updatedReagents[idx].currentStock;
+        let newMinStock = updatedReagents[idx].minStock;
+        let newQuantityPerContainer = updatedReagents[idx].quantityPerContainer;
+        let newBaseUnit = updatedReagents[idx].baseUnit;
+
+        // Si la unidad base del nuevo ingreso es diferente (ej. de L a mL), normalizamos el stock existente
+        if (reagent.baseUnit && reagent.baseUnit !== updatedReagents[idx].baseUnit) {
+           newStock = normalizeToUnit(newStock, updatedReagents[idx].baseUnit, reagent.baseUnit);
+           newMinStock = normalizeToUnit(newMinStock, updatedReagents[idx].baseUnit, reagent.baseUnit);
+           newQuantityPerContainer = normalizeToUnit(newQuantityPerContainer, updatedReagents[idx].baseUnit, reagent.baseUnit);
+           newBaseUnit = reagent.baseUnit;
+        }
+
         finalReagent = { 
           ...updatedReagents[idx], 
-          currentStock: formatQuantity(updatedReagents[idx].currentStock + transactionData.quantity, updatedReagents[idx].presentation), 
+          currentStock: formatQuantity(newStock + transactionData.quantity, updatedReagents[idx].presentation), 
+          minStock: newMinStock,
+          quantityPerContainer: newQuantityPerContainer,
+          baseUnit: newBaseUnit,
           lastUpdated: timestamp,
           isOrdered: false // Si entra stock, ya no está pedido
         };

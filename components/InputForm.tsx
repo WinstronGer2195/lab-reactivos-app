@@ -315,6 +315,23 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
 
     const finalReagentId = (isExisting) ? selectedReagentId : undefined;
 
+    let finalQuantityPerContainer = formData.quantityPerContainer;
+    let finalBaseUnit = formData.baseUnit;
+    let finalMinStock = formData.minStock;
+
+    const upperUnit = finalBaseUnit.toUpperCase().trim();
+    if (upperUnit === 'L' || upperUnit === 'LITROS' || upperUnit === 'LITRO') {
+      finalQuantityPerContainer = Math.round(finalQuantityPerContainer * 1000);
+      finalMinStock = Math.round(finalMinStock * 1000);
+      finalBaseUnit = 'mL';
+    } else if (upperUnit === 'KG' || upperUnit === 'KILOGRAMOS' || upperUnit === 'KILOGRAMO') {
+      finalQuantityPerContainer = Math.round(finalQuantityPerContainer * 1000);
+      finalMinStock = Math.round(finalMinStock * 1000);
+      finalBaseUnit = 'g';
+    }
+
+    const finalTotalBaseQuantity = formatQuantity(formData.quantityEntered * finalQuantityPerContainer, formData.presentation);
+
     onTransaction(
       {
         id: finalReagentId,
@@ -324,15 +341,15 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         department: formData.department,
         expiryDate: formData.expiryDate || 'N/A',
         lot: formData.lot || '',
-        minStock: formData.minStock,
+        minStock: finalMinStock,
         containerType: formData.containerType,
-        quantityPerContainer: formData.quantityPerContainer,
-        baseUnit: formData.baseUnit
+        quantityPerContainer: finalQuantityPerContainer,
+        baseUnit: finalBaseUnit
       },
       {
         reagentId: finalReagentId,
         type: 'IN',
-        quantity: totalBaseQuantity,
+        quantity: finalTotalBaseQuantity,
         displayQuantity: formData.quantityEntered,
         displayUnit: formData.containerType,
         analyst: formData.analystName,
