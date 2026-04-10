@@ -33,6 +33,7 @@ const BASE_UNITS_PKG = ['unidades', 'Rx'];
 const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole }) => {
   const [loading, setLoading] = useState(false);
   const [isExisting, setIsExisting] = useState(false);
+  const [isNewBrandForExisting, setIsNewBrandForExisting] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
   const [isCustomUnitMode, setIsCustomUnitMode] = useState(false);
   const [currentImageBase64, setCurrentImageBase64] = useState<string | null>(null);
@@ -132,6 +133,14 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     });
   }, [reagents, currentUser, transactions]);
 
+  const groupedReagents = useMemo(() => {
+    const groups: Record<string, Reagent[]> = {};
+    sortedReagents.forEach(r => {
+      if (!groups[r.name]) groups[r.name] = [];
+      groups[r.name].push(r);
+    });
+    return groups;
+  }, [sortedReagents]);
 
   const totalBaseQuantity = useMemo(() => {
     return formatQuantity(formData.quantityEntered * formData.quantityPerContainer, formData.presentation);
@@ -186,27 +195,48 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         baseUnit: newBaseUnit
       }));
 
-      const existing = reagents.find(r => 
+      const existingExact = reagents.find(r => 
         r.name.toUpperCase() === upperName && 
         r.brand.toUpperCase() === upperBrand
       );
 
-      if (existing) {
+      if (existingExact) {
         setIsExisting(true);
-        setSelectedReagentId(existing.id);
+        setIsNewBrandForExisting(false);
+        setSelectedReagentId(existingExact.id);
         setIsCustomUnitMode(false); 
         setFormData(prev => ({ 
           ...prev, 
-          baseUnit: existing.baseUnit, 
-          containerType: existing.containerType,
-          quantityPerContainer: existing.quantityPerContainer,
-          minStock: existing.minStock,
-          department: existing.department,
-          presentation: existing.presentation
+          baseUnit: existingExact.baseUnit, 
+          containerType: existingExact.containerType,
+          quantityPerContainer: existingExact.quantityPerContainer,
+          minStock: existingExact.minStock,
+          department: existingExact.department,
+          presentation: existingExact.presentation
         }));
       } else {
-        setIsExisting(false);
-        setIsCustomUnitMode(false);
+        const existingName = reagents.find(r => r.name.toUpperCase() === upperName);
+        if (existingName) {
+          setIsExisting(false);
+          setIsNewBrandForExisting(true);
+          setSelectedReagentId('');
+          setIsCustomUnitMode(false);
+          setFormData(prev => ({
+            ...prev,
+            name: existingName.name,
+            brand: upperBrand,
+            baseUnit: existingName.baseUnit,
+            containerType: existingName.containerType,
+            quantityPerContainer: existingName.quantityPerContainer,
+            minStock: existingName.minStock,
+            department: existingName.department,
+            presentation: existingName.presentation
+          }));
+        } else {
+          setIsExisting(false);
+          setIsNewBrandForExisting(false);
+          setIsCustomUnitMode(false);
+        }
       }
     } catch (error: any) {
       console.error(error);
@@ -322,6 +352,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       department: currentUser?.department || 'Fisicoquímico'
     }));
     setIsExisting(false);
+    setIsNewBrandForExisting(false);
     setSelectedReagentId('');
     setIsCustomUnitMode(false);
     setCurrentImageBase64(null);
@@ -330,7 +361,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
 
   // Lógica para saber si el campo departamento es editable
   // Es editable SI: NO es un reactivo existente Y el usuario es GERENTE
-  const canEditDepartment = !isExisting && userRole === 'GERENTE';
+  const canEditDepartment = !isExisting && !isNewBrandForExisting && userRole === 'GERENTE';
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -367,9 +398,11 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                   {isExisting && selectedReagentId 
                     ? (() => {
                         const r = reagents.find(x => x.id === selectedReagentId);
-                        return r ? `${r.name} - ${r.brand}` : '+ Nuevo Reactivo / Marca';
+                        return r ? `${r.name} - ${r.brand}` : '+ Nuevo Reactivo';
                       })()
-                    : '+ Nuevo Reactivo / Marca'}
+                    : isNewBrandForExisting
+                      ? `${formData.name} - (Nueva Marca)`
+                      : '+ Nuevo Reactivo (Nombre y Marca nuevos)'}
                 </span>
                 <span className="text-slate-400 text-xs ml-2">▼</span>
               </div>
@@ -388,9 +421,10 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                     />
                   </div>
                   <div 
-                    className={`px-4 py-3 cursor-pointer hover:bg-indigo-50 font-bold ${!isExisting ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'}`}
+                    className={`px-4 py-3 cursor-pointer hover:bg-indigo-50 font-bold ${!isExisting && !isNewBrandForExisting ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'}`}
                     onClick={() => {
                       setIsExisting(false);
+                      setIsNewBrandForExisting(false);
                       setSelectedReagentId('');
                       setIsCustomUnitMode(false);
                       setFormData(prev => ({ 
@@ -402,32 +436,66 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                       setSearchQuery('');
                     }}
                   >
-                    + Nuevo Reactivo / Marca
+                    + Nuevo Reactivo (Nombre y Marca nuevos)
                   </div>
-                  {sortedReagents
-                    .filter(r => 
-                      (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      (r.brand || '').toLowerCase().includes(searchQuery.toLowerCase())
+                  {Object.entries(groupedReagents)
+                    .filter(([name, items]) => 
+                      name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      items.some(r => r.brand.toLowerCase().includes(searchQuery.toLowerCase()))
                     )
-                    .map(r => (
-                      <div 
-                        key={r.id} 
-                        className={`px-4 py-3 cursor-pointer hover:bg-slate-50 font-medium text-slate-700 border-t border-slate-50 ${selectedReagentId === r.id ? 'bg-slate-100' : ''}`}
-                        onClick={() => {
-                          setIsExisting(true);
-                          setSelectedReagentId(r.id);
-                          setIsCustomUnitMode(false);
-                          setFormData(prev => ({
-                            ...prev, name: r.name, brand: r.brand, presentation: r.presentation,
-                            baseUnit: r.baseUnit, containerType: r.containerType, 
-                            quantityPerContainer: r.quantityPerContainer, minStock: r.minStock,
-                            department: r.department
-                          }));
-                          setIsDropdownOpen(false);
-                          setSearchQuery('');
-                        }}
-                      >
-                        {r.name} - {r.brand}
+                    .map(([name, items]) => (
+                      <div key={name} className="border-t border-slate-200">
+                        <div className="px-4 py-2 bg-slate-100 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                          {name}
+                        </div>
+                        {items.map(r => (
+                          <div 
+                            key={r.id} 
+                            className={`px-4 py-3 cursor-pointer hover:bg-slate-50 font-medium text-slate-700 pl-6 flex justify-between items-center ${selectedReagentId === r.id ? 'bg-indigo-50 text-indigo-700' : ''}`}
+                            onClick={() => {
+                              setIsExisting(true);
+                              setIsNewBrandForExisting(false);
+                              setSelectedReagentId(r.id);
+                              setIsCustomUnitMode(false);
+                              setFormData(prev => ({
+                                ...prev, name: r.name, brand: r.brand, presentation: r.presentation,
+                                baseUnit: r.baseUnit, containerType: r.containerType, 
+                                quantityPerContainer: r.quantityPerContainer, minStock: r.minStock,
+                                department: r.department
+                              }));
+                              setIsDropdownOpen(false);
+                              setSearchQuery('');
+                            }}
+                          >
+                            <span>↳ {r.brand}</span>
+                            <span className="text-xs text-slate-400 font-bold">{r.currentStock} {r.baseUnit}</span>
+                          </div>
+                        ))}
+                        <div 
+                          className="px-4 py-3 cursor-pointer hover:bg-indigo-50 font-bold text-indigo-600 text-sm pl-6 border-t border-slate-50"
+                          onClick={() => {
+                            setIsExisting(false);
+                            setIsNewBrandForExisting(true);
+                            setSelectedReagentId('');
+                            setIsCustomUnitMode(false);
+                            const template = items[0];
+                            setFormData(prev => ({
+                              ...prev, 
+                              name: template.name, 
+                              brand: '', 
+                              presentation: template.presentation,
+                              baseUnit: template.baseUnit, 
+                              containerType: template.containerType, 
+                              quantityPerContainer: template.quantityPerContainer, 
+                              minStock: template.minStock,
+                              department: template.department
+                            }));
+                            setIsDropdownOpen(false);
+                            setSearchQuery('');
+                          }}
+                        >
+                          + Añadir nueva marca para {name}
+                        </div>
                       </div>
                   ))}
                 </div>
@@ -444,7 +512,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 <input 
                   type="text" 
                   required 
-                  disabled={isExisting} 
+                  disabled={isExisting || isNewBrandForExisting} 
                   className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none disabled:opacity-60 uppercase placeholder:normal-case" 
                   placeholder="EJ: METANOL ABSOLUTO"
                   value={formData.name} 
