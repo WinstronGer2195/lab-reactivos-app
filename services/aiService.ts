@@ -60,10 +60,10 @@ const analyzeWithGemini = async (base64Image: string, prompt: string, modelName:
           name:         { type: Type.STRING },
           brand:        { type: Type.STRING },
           presentation: { type: Type.STRING, description: "Must be 'Líquido', 'Sólido', or 'Paquete'" },
-          lot:          { type: Type.STRING, nullable: true },
-          expiryDate:   { type: Type.STRING, nullable: true, description: "YYYY-MM-DD or null" }
+          lot:          { type: Type.STRING, description: "Lot number or empty string if not visible" },
+          expiryDate:   { type: Type.STRING, description: "YYYY-MM-DD or empty string if not visible" }
         },
-        required: ["name", "brand", "presentation"]
+        required: ["name", "brand", "presentation", "lot", "expiryDate"]
       }
     }
   });
@@ -153,6 +153,12 @@ export const analyzeReagentLabel = async (
         return result;
       }
     } catch (error: any) {
+      const msg = (error?.message || JSON.stringify(error) || '').toLowerCase();
+      // Errores de cuenta/créditos: skip al siguiente proveedor sin guardar como error fatal
+      if (msg.includes('credit') || msg.includes('insufficient') || msg.includes('billing') || msg.includes('quota')) {
+        console.warn(`${provider.name} sin créditos/cuota, saltando al siguiente...`);
+        continue;
+      }
       console.warn(`Fallo con ${provider.name}:`, error.message || error);
       lastError = error;
     }
