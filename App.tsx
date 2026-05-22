@@ -27,7 +27,8 @@ const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
 const STORAGE_KEY_CLOUD_URL = 'reagentflow_cloud_url';
 const STORAGE_KEY_MG_PASSWORD = 'reagentflow_mg_pwd';
-const STORAGE_KEY_GEMINI = 'reagentflow_gemini_key';
+const STORAGE_KEY_GEMINI     = 'reagentflow_gemini_key';
+const STORAGE_KEY_ANTHROPIC  = 'reagentflow_anthropic_key';
 
 // --- CONFIGURACIÓN EMAILJS (¡REEMPLAZA ESTOS VALORES!) ---
 const EMAILJS_PUBLIC_KEY = "aMH7yh-WaX5jjiRUm"; 
@@ -77,6 +78,7 @@ const App: React.FC = () => {
   const [managerEmail, setManagerEmail] = useState<string>('');
   const [mgPassword, setMgPassword] = useState<string | null>(localStorage.getItem(STORAGE_KEY_MG_PASSWORD));
   const [geminiKey, setGeminiKey] = useState<string>(localStorage.getItem(STORAGE_KEY_GEMINI) || '');
+  const [anthropicKey, setAnthropicKey] = useState<string>(localStorage.getItem(STORAGE_KEY_ANTHROPIC) || '');
   
   // Auth States
   const [authInput, setAuthInput] = useState('');
@@ -145,10 +147,9 @@ const App: React.FC = () => {
           catch { setAnalysts([]); }
         }
         const geminiRow = configData.find(d => d.key === 'gemini_api_key');
-        if (geminiRow && geminiRow.value) {
-          setGeminiKey(geminiRow.value);
-          localStorage.setItem(STORAGE_KEY_GEMINI, geminiRow.value);
-        }
+        if (geminiRow?.value) { setGeminiKey(geminiRow.value); localStorage.setItem(STORAGE_KEY_GEMINI, geminiRow.value); }
+        const anthropicRow = configData.find(d => d.key === 'anthropic_api_key');
+        if (anthropicRow?.value) { setAnthropicKey(anthropicRow.value); localStorage.setItem(STORAGE_KEY_ANTHROPIC, anthropicRow.value); }
       }
 
       const { data: reagentsData } = await supabase.from('reagents').select('*');
@@ -226,7 +227,14 @@ const App: React.FC = () => {
     setGeminiKey(key);
     localStorage.setItem(STORAGE_KEY_GEMINI, key);
     await saveConfigKey('gemini_api_key', key);
-    showToast("Clave de IA guardada y sincronizada");
+    showToast("Clave de Gemini guardada");
+  };
+
+  const updateAnthropicKey = async (key: string) => {
+    setAnthropicKey(key);
+    localStorage.setItem(STORAGE_KEY_ANTHROPIC, key);
+    await saveConfigKey('anthropic_api_key', key);
+    showToast("Clave de Claude guardada");
   };
 
   const addAnalyst = async (user: AnalystUser) => {
@@ -733,12 +741,12 @@ const App: React.FC = () => {
         <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
             <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} onEdit={setEditingReagentId} />} />
-            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} />} />
+            <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} supabase={supabase} />} />
             <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />
-            <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} /> : <Navigate to="/" />} />
+            <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} anthropicKey={anthropicKey} onUpdateAnthropicKey={updateAnthropicKey} /> : <Navigate to="/" />} />
           </Routes>
         </main>
         <MobileNav />

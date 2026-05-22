@@ -11,15 +11,18 @@ interface Props {
   currentEmail: string;
   geminiKey: string;
   onUpdateGeminiKey: (key: string) => void;
+  anthropicKey: string;
+  onUpdateAnthropicKey: (key: string) => void;
 }
 
-const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst, onRemoveAnalyst, currentMg, currentEmail, geminiKey, onUpdateGeminiKey }) => {
+const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst, onRemoveAnalyst, currentMg, currentEmail, geminiKey, onUpdateGeminiKey, anthropicKey, onUpdateAnthropicKey }) => {
   const [mgInput, setMgInput] = useState('');
   const [emailInput, setEmailInput] = useState(currentEmail);
   const [newAnalystName, setNewAnalystName] = useState('');
   const [newAnalystDept, setNewAnalystDept] = useState<Department>('Fisicoquímico');
   const [success, setSuccess] = useState('');
   const [geminiInput, setGeminiInput] = useState('');
+  const [anthropicInput, setAnthropicInput] = useState('');
   const [showKey, setShowKey] = useState(false);
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -35,7 +38,16 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
     if (!geminiInput.trim()) return;
     onUpdateGeminiKey(geminiInput.trim());
     setGeminiInput('');
-    setSuccess('Clave de IA guardada y sincronizada.');
+    setSuccess('Clave de Gemini guardada.');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleSaveAnthropicKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!anthropicInput.trim()) return;
+    onUpdateAnthropicKey(anthropicInput.trim());
+    setAnthropicInput('');
+    setSuccess('Clave de Claude guardada.');
     setTimeout(() => setSuccess(''), 3000);
   };
 
@@ -151,6 +163,26 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
               <p>1. Abre <span className="font-mono bg-slate-200 px-1 rounded">aistudio.google.com</span></p>
               <p>2. Clic en <strong>"Get API key"</strong> → <strong>"Create API key"</strong></p>
               <p>3. Copia y pega aquí. El plan gratuito incluye 1.500 consultas/día.</p>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold ${anthropicKey ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-500 border border-slate-200'}`}>
+                <div className={`w-2 h-2 rounded-full ${anthropicKey ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                Claude (Anthropic): {anthropicKey ? 'Activo' : 'No configurado'}
+              </div>
+              <form onSubmit={handleSaveAnthropicKey} className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  className="flex-1 px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-violet-500 outline-none font-mono text-sm"
+                  value={anthropicInput}
+                  onChange={e => setAnthropicInput(e.target.value)}
+                />
+                <button type="submit" disabled={!anthropicInput.trim()} className="px-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white font-bold rounded-2xl transition-all">
+                  Guardar
+                </button>
+              </form>
+              <p className="text-xs text-slate-400">Clave desde <span className="font-mono">console.anthropic.com</span> → API Keys. Requiere créditos (desde u$s 5).</p>
             </div>
           </div>
         </div>

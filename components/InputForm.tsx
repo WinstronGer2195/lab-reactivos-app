@@ -1,7 +1,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole, ImageCacheItem } from '../types';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { Reagent, Presentation, Department, Transaction, AnalystUser, UserRole } from '../types';
 import { analyzeReagentLabel } from '../services/aiService';
-import { findReagentInImageLocally } from '../services/ocrService';
+import { getCachedResult, saveCachedResult } from '../services/cacheService';
 import { fileToBase64, generateId, formatQuantity } from '../utils';
 import { 
   CameraIcon, 
@@ -14,9 +15,6 @@ import {
   ExclamationTriangleIcon
 } from '@heroicons/react/24/solid';
 
-const CACHE_KEY = 'reagent_image_cache';
-const MAX_CACHE_ITEMS = 3;
-
 interface Props {
   reagents: Reagent[];
   analysts: AnalystUser[];
@@ -24,13 +22,14 @@ interface Props {
   onTransaction: (reagent: Partial<Reagent>, data: any) => void;
   currentUser: AnalystUser | null;
   userRole: UserRole | null;
+  supabase: SupabaseClient | null;
 }
 
 const BASE_UNITS_LIQUID = ['mL', 'L', 'uL'];
 const BASE_UNITS_SOLID = ['g', 'kg', 'mg'];
 const BASE_UNITS_PKG = ['unidades', 'Rx'];
 
-const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole }) => {
+const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole, supabase }) => {
   const [loading, setLoading] = useState(false);
   const [isExisting, setIsExisting] = useState(false);
   const [isNewBrandForExisting, setIsNewBrandForExisting] = useState(false);
@@ -154,25 +153,19 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     try {
       const base64 = await fileToBase64(file);
       setCurrentImageBase64(base64);
-      
-      // Try local OCR first (faster, no API dependency)
-      const localMatch = await findReagentInImageLocally(base64, reagents);
-      
-      let analysisResult = null;
-      
-      if (localMatch) {
-        analysisResult = localMatch;
-      } else {
-        // Fallback to Gemini API if local OCR doesn't find a match
-        let imageCache: ImageCacheItem[] = [];
-        try {
-          const cached = localStorage.getItem(CACHE_KEY);
-          if (cached) imageCache = JSON.parse(cached);
-        } catch (e) {
-          console.error("Error reading cache", e);
-        }
 
-        analysisResult = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })), imageCache);
+      // 1. Verificar cache de Supabase primero (resultado instantáneo para imágenes repetidas)
+      let analysisResult = null;
+      if (supabase) {
+        analysisResult = await getCachedResult(supabase, base64);
+        if (analysisResult) console.log('Cache hit — resultado instantáneo desde Supabase');
+      }
+
+      // 2. Si no está en cache, llamar a la IA
+      if (!analysisResult) {
+        analysisResult = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })));
+        // Guardar en cache para la próxima vez
+        if (supabase) saveCachedResult(supabase, base64, analysisResult);
       }
       
       const newPresentation = (analysisResult.presentation === 'Líquido' || analysisResult.presentation === 'Sólido' || analysisResult.presentation === 'Paquete')
@@ -309,32 +302,6 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     }
     // -----------------------------------------------------------
     
-    // Update cache if we have an image
-    if (currentImageBase64) {
-      try {
-        let imageCache: ImageCacheItem[] = [];
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) imageCache = JSON.parse(cached);
-        
-        imageCache.unshift({
-          base64Image: currentImageBase64,
-          result: {
-            name: formData.name,
-            brand: formData.brand,
-            presentation: formData.presentation
-          }
-        });
-        
-        if (imageCache.length > MAX_CACHE_ITEMS) {
-          imageCache = imageCache.slice(0, MAX_CACHE_ITEMS);
-        }
-        
-        localStorage.setItem(CACHE_KEY, JSON.stringify(imageCache));
-      } catch (e) {
-        console.error("Error saving to cache", e);
-      }
-    }
-
     const finalReagentId = (isExisting) ? selectedReagentId : undefined;
 
     let finalQuantityPerContainer = formData.quantityPerContainer;
