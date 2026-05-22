@@ -175,8 +175,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         analysisResult = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })), imageCache);
       }
       
-      const newPresentation = (analysisResult.presentation === 'Líquido' || analysisResult.presentation === 'Sólido' || analysisResult.presentation === 'Paquete') 
-        ? analysisResult.presentation 
+      const newPresentation = (analysisResult.presentation === 'Líquido' || analysisResult.presentation === 'Sólido' || analysisResult.presentation === 'Paquete')
+        ? analysisResult.presentation
         : 'Líquido';
 
       let newBaseUnit = 'mL';
@@ -187,12 +187,34 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       const upperName = (analysisResult.name || '').toUpperCase();
       const upperBrand = (analysisResult.brand || '').toUpperCase();
 
+      // Normalizar fecha de vencimiento al formato YYYY-MM-DD que espera el input[type=date]
+      const parseAIDate = (raw?: string): string => {
+        if (!raw || raw === 'null') return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+        // MM/YYYY → último día del mes
+        const mmYYYY = raw.match(/^(\d{2})\/(\d{4})$/);
+        if (mmYYYY) {
+          const lastDay = new Date(parseInt(mmYYYY[2]), parseInt(mmYYYY[1]), 0).getDate();
+          return `${mmYYYY[2]}-${mmYYYY[1]}-${String(lastDay).padStart(2, '0')}`;
+        }
+        // MM/YY → asume 20YY
+        const mmYY = raw.match(/^(\d{2})\/(\d{2})$/);
+        if (mmYY) {
+          const year = `20${mmYY[2]}`;
+          const lastDay = new Date(parseInt(year), parseInt(mmYY[1]), 0).getDate();
+          return `${year}-${mmYY[1]}-${String(lastDay).padStart(2, '0')}`;
+        }
+        return '';
+      };
+
       setFormData(prev => ({
         ...prev,
         name: upperName,
         brand: upperBrand,
         presentation: newPresentation,
-        baseUnit: newBaseUnit
+        baseUnit: newBaseUnit,
+        lot: analysisResult.lot && analysisResult.lot !== 'null' ? analysisResult.lot : prev.lot,
+        expiryDate: parseAIDate(analysisResult.expiryDate) || prev.expiryDate
       }));
 
       const existingExact = reagents.find(r => 

@@ -3,7 +3,8 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { AIAnalysisResult, ImageCacheItem } from "../types";
 
-// Helper to get env variables safely
+const STORAGE_KEY_GEMINI = 'reagentflow_gemini_key';
+
 const getEnvVar = (name: string): string => {
   try {
     // @ts-ignore
@@ -18,18 +19,36 @@ const getEnvVar = (name: string): string => {
   return '';
 };
 
+// Lee la API key priorizando: localStorage (configurada en app) → variables de entorno
+const getGeminiKey = (): string => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_GEMINI);
+    if (stored && stored.length > 10) return stored;
+  } catch (_) {}
+  return getEnvVar('VITE_GEMINI_API_KEY') || getEnvVar('VITE_API_KEY') || getEnvVar('GEMINI_API_KEY') || getEnvVar('API_KEY');
+};
+
+const PROMPT = (contextText: string) => `Analiza esta imagen de una etiqueta de reactivo de laboratorio con ALTA PRECISIÓN.${contextText}
+
+INSTRUCCIONES — extrae estos campos:
+1. name: Nombre químico completo (ej: "Metanol Absoluto", "Ácido Sulfúrico 98%"). En mayúsculas.
+2. brand: Marca del fabricante (ej: "CICARELLI", "MERCK"). Si no es visible, usa "GENERICO". En mayúsculas.
+3. presentation: Clasifica OBLIGATORIAMENTE como "Líquido", "Sólido" o "Paquete".
+   - Unidades de volumen (mL, L, uL) → "Líquido"
+   - Unidades de masa (g, kg, mg) → "Sólido"
+   - Sin unidad de medida o unidades sueltas → "Paquete"
+4. lot: Número de lote. Puede aparecer como "Lot:", "Lote:", "L/N:", "Batch:", "B/N:" seguido de un código alfanumérico. Devuelve null si no está visible.
+5. expiryDate: Fecha de vencimiento. Puede aparecer como "Exp:", "Vto:", "VTO:", "EXP:", "Use by:", "Vence:" seguido de una fecha. NORMALIZA SIEMPRE a formato YYYY-MM-DD. Si solo hay mes/año (ej: "12/2026"), usa el último día del mes (ej: "2026-12-31"). Devuelve null si no está visible.
+
+Responde únicamente en formato JSON puro con las claves: name, brand, presentation, lot, expiryDate.`;
+
 const analyzeWithGemini = async (base64Image: string, prompt: string, modelName: string, apiKey: string): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
     model: modelName,
     contents: {
       parts: [
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: base64Image,
-          },
-        },
+        { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
         { text: prompt }
       ]
     },
@@ -38,12 +57,11 @@ const analyzeWithGemini = async (base64Image: string, prompt: string, modelName:
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          name: { type: Type.STRING },
-          brand: { type: Type.STRING },
-          presentation: { 
-            type: Type.STRING,
-            description: "Must be 'Líquido', 'Sólido', or 'Paquete'"
-          }
+          name:         { type: Type.STRING },
+          brand:        { type: Type.STRING },
+          presentation: { type: Type.STRING, description: "Must be 'Líquido', 'Sólido', or 'Paquete'" },
+          lot:          { type: Type.STRING, nullable: true },
+          expiryDate:   { type: Type.STRING, nullable: true, description: "YYYY-MM-DD or null" }
         },
         required: ["name", "brand", "presentation"]
       }
@@ -56,21 +74,14 @@ const analyzeWithOpenAI = async (base64Image: string, prompt: string, apiKey: st
   const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: prompt },
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${base64Image}`,
-            },
-          },
-        ],
-      },
-    ],
-    response_format: { type: "json_object" },
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+      ]
+    }],
+    response_format: { type: "json_object" }
   });
   return response.choices[0].message.content || "{}";
 };
@@ -78,58 +89,54 @@ const analyzeWithOpenAI = async (base64Image: string, prompt: string, apiKey: st
 const analyzeWithAnthropic = async (base64Image: string, prompt: string, apiKey: string): Promise<string> => {
   const anthropic = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   const response = await anthropic.messages.create({
-    model: "claude-3-haiku-20240307",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: "image/jpeg",
-              data: base64Image,
-            },
-          },
-          { type: "text", text: prompt + "\n\nResponde ÚNICAMENTE con un objeto JSON válido, sin texto adicional." }
-        ],
-      }
-    ],
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
+        { type: "text", text: prompt + "\n\nResponde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, con las claves: name, brand, presentation, lot, expiryDate." }
+      ]
+    }]
   });
   // @ts-ignore
   return response.content[0].text || "{}";
 };
 
-export const analyzeReagentLabel = async (base64Image: string, existingReagents?: {name: string, brand: string}[], imageCache?: ImageCacheItem[]): Promise<AIAnalysisResult> => {
-  const geminiApiKey = getEnvVar('VITE_GEMINI_API_KEY') || getEnvVar('VITE_API_KEY') || getEnvVar('GEMINI_API_KEY') || getEnvVar('API_KEY');
-  const openaiApiKey = getEnvVar('VITE_OPENAI_API_KEY');
+export const analyzeReagentLabel = async (
+  base64Image: string,
+  existingReagents?: { name: string; brand: string }[],
+  imageCache?: ImageCacheItem[]
+): Promise<AIAnalysisResult> => {
+  const geminiApiKey = getGeminiKey();
+  const openaiApiKey  = getEnvVar('VITE_OPENAI_API_KEY');
   const anthropicApiKey = getEnvVar('VITE_ANTHROPIC_API_KEY');
 
   if (!geminiApiKey && !openaiApiKey && !anthropicApiKey) {
-    throw new Error("Faltan las claves de API. Configura VITE_GEMINI_API_KEY, VITE_OPENAI_API_KEY o VITE_ANTHROPIC_API_KEY en tu entorno.");
+    throw new Error(
+      "No hay clave de API configurada. Ve a Configuración → Inteligencia Artificial e ingresa tu clave de Gemini (gratuita en aistudio.google.com)."
+    );
   }
 
-  const contextText = existingReagents && existingReagents.length > 0 
-    ? `\n\nCONTEXTO DE INVENTARIO (Caché):\nA continuación se presenta una lista de reactivos que ya existen en nuestra base de datos:\n${JSON.stringify(existingReagents.map(r => ({name: r.name, brand: r.brand})))}\n\nSi el reactivo de la imagen coincide con alguno de la lista de CONTEXTO, DEBES usar EXACTAMENTE el mismo 'name' y 'brand' de la lista para evitar duplicados.`
+  const contextText = existingReagents && existingReagents.length > 0
+    ? `\n\nCONTEXTO DE INVENTARIO (evitar duplicados):\n${JSON.stringify(existingReagents.map(r => ({ name: r.name, brand: r.brand })))}\nSi el reactivo coincide exactamente con uno de la lista, usa ese mismo 'name' y 'brand'.`
     : '';
 
-  const prompt = `Analiza esta imagen de una etiqueta de reactivo de laboratorio con ALTA PRECISIÓN.${contextText}\n\nINSTRUCCIONES:\n1. NOMBRE: Extrae el nombre químico completo (ej: 'Metanol Absoluto', 'Ácido Sulfúrico 98%').\n2. MARCA: Extrae la marca del fabricante (ej: 'Cicarelli', 'Merck'). Si no es visible, usa 'GENERICO'.\n3. PRESENTACIÓN: Clasifica OBLIGATORIAMENTE en: 'Líquido', 'Sólido' o 'Paquete'.\n   - Si ves unidades de volumen (mL, L) -> 'Líquido'.\n   - Si ves unidades de masa (g, kg) -> 'Sólido'.\n\nResponde únicamente en formato JSON puro con las claves "name", "brand" y "presentation".`;
+  const prompt = PROMPT(contextText);
 
   const providers = [];
-  
+
   if (geminiApiKey) {
-    providers.push({ name: 'Gemini 3 Flash', fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-3-flash-preview', geminiApiKey) });
-    providers.push({ name: 'Gemini 2.5 Flash', fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.5-flash', geminiApiKey) });
+    // Modelos estables con visión, de más rápido a más potente
+    providers.push({ name: 'Gemini 2.0 Flash',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash',  geminiApiKey) });
+    providers.push({ name: 'Gemini 1.5 Flash',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-flash',  geminiApiKey) });
+    providers.push({ name: 'Gemini 1.5 Pro',    fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-pro',    geminiApiKey) });
   }
   if (openaiApiKey) {
     providers.push({ name: 'OpenAI GPT-4o-mini', fn: () => analyzeWithOpenAI(base64Image, prompt, openaiApiKey) });
   }
   if (anthropicApiKey) {
-    providers.push({ name: 'Anthropic Claude 3 Haiku', fn: () => analyzeWithAnthropic(base64Image, prompt, anthropicApiKey) });
-  }
-  if (geminiApiKey) {
-    providers.push({ name: 'Gemini 2.5 Pro', fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.5-pro', geminiApiKey) });
+    providers.push({ name: 'Claude Haiku', fn: () => analyzeWithAnthropic(base64Image, prompt, anthropicApiKey) });
   }
 
   let lastError: any = null;
@@ -138,28 +145,27 @@ export const analyzeReagentLabel = async (base64Image: string, existingReagents?
     try {
       console.log(`Intentando analizar con ${provider.name}...`);
       let text = await provider.fn();
-      
-      // Clean potential markdown blocks (```json ... ```)
       text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-      
+
       const result = JSON.parse(text) as AIAnalysisResult;
       if (result.name && result.brand && result.presentation) {
-        console.log(`Análisis exitoso con ${provider.name}`);
+        console.log(`Análisis exitoso con ${provider.name}:`, result);
         return result;
       }
     } catch (error: any) {
       console.warn(`Fallo con ${provider.name}:`, error.message || error);
       lastError = error;
-      // Continue to the next provider
     }
   }
 
-  console.error("Todos los proveedores de IA fallaron.", lastError);
-  
   const errorString = lastError instanceof Error ? lastError.message : JSON.stringify(lastError);
-  if (errorString.includes('503') || errorString.includes('high demand') || errorString.includes('UNAVAILABLE') || errorString.includes('429')) {
-    throw new Error("Todos los servidores de Inteligencia Artificial están saturados temporalmente. Puedes añadir claves de OpenAI (VITE_OPENAI_API_KEY) o Anthropic (VITE_ANTHROPIC_API_KEY) en las variables de entorno para tener más opciones de respaldo, o reintenta en unos segundos.");
+
+  if (errorString.includes('503') || errorString.includes('UNAVAILABLE') || errorString.includes('429')) {
+    throw new Error("Los servidores de IA están saturados. Reintenta en unos segundos.");
   }
-  
+  if (errorString.includes('401') || errorString.includes('API_KEY_INVALID') || errorString.includes('API key not valid')) {
+    throw new Error("La clave de API de Gemini es inválida. Ve a Configuración → Inteligencia Artificial y corrígela.");
+  }
+
   throw new Error(`Error de análisis tras intentar con múltiples IA: ${errorString}`);
 };

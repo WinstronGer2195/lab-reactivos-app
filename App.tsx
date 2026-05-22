@@ -27,6 +27,7 @@ const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
 const STORAGE_KEY_CLOUD_URL = 'reagentflow_cloud_url';
 const STORAGE_KEY_MG_PASSWORD = 'reagentflow_mg_pwd';
+const STORAGE_KEY_GEMINI = 'reagentflow_gemini_key';
 
 // --- CONFIGURACIÓN EMAILJS (¡REEMPLAZA ESTOS VALORES!) ---
 const EMAILJS_PUBLIC_KEY = "aMH7yh-WaX5jjiRUm"; 
@@ -75,6 +76,7 @@ const App: React.FC = () => {
   const [analysts, setAnalysts] = useState<AnalystUser[]>([]); // Lista de usuarios disponibles
   const [managerEmail, setManagerEmail] = useState<string>('');
   const [mgPassword, setMgPassword] = useState<string | null>(localStorage.getItem(STORAGE_KEY_MG_PASSWORD));
+  const [geminiKey, setGeminiKey] = useState<string>(localStorage.getItem(STORAGE_KEY_GEMINI) || '');
   
   // Auth States
   const [authInput, setAuthInput] = useState('');
@@ -131,16 +133,21 @@ const App: React.FC = () => {
           localStorage.setItem(STORAGE_KEY_MG_PASSWORD, pwdRow.value);
         }
         if (analystsRow) {
-          try { 
+          try {
             const parsed = JSON.parse(analystsRow.value);
             // Migración simple si antes eran strings
             if (Array.isArray(parsed) && typeof parsed[0] === 'string') {
                setAnalysts(parsed.map((name: string) => ({ name, department: 'Fisicoquímico' })));
             } else {
-               setAnalysts(parsed); 
+               setAnalysts(parsed);
             }
-          } 
+          }
           catch { setAnalysts([]); }
+        }
+        const geminiRow = configData.find(d => d.key === 'gemini_api_key');
+        if (geminiRow && geminiRow.value) {
+          setGeminiKey(geminiRow.value);
+          localStorage.setItem(STORAGE_KEY_GEMINI, geminiRow.value);
         }
       }
 
@@ -191,6 +198,17 @@ const App: React.FC = () => {
     if (supabase) pullData();
   }, [supabase, pullData]);
 
+  // Keep-alive: evita que Supabase pause el proyecto por inactividad (plan gratuito: 7 días sin actividad = pausa)
+  useEffect(() => {
+    if (!supabase) return;
+    const ping = async () => {
+      try { await supabase.from('config').select('key').limit(1); } catch (_) {}
+    };
+    ping(); // ping inmediato al conectar
+    const id = setInterval(ping, 4 * 60 * 60 * 1000); // cada 4 horas mientras la app esté abierta
+    return () => clearInterval(id);
+  }, [supabase]);
+
   // --- Persistencia de configuración ---
   const saveConfigKey = async (key: string, value: string) => {
     if (!supabase) return;
@@ -202,6 +220,13 @@ const App: React.FC = () => {
     if (pwd) { setMgPassword(pwd); localStorage.setItem(STORAGE_KEY_MG_PASSWORD, pwd); await saveConfigKey('manager_password', pwd); }
     if (email) { setManagerEmail(email); await saveConfigKey('manager_email', email); }
     showToast("Ajustes sincronizados globalmente");
+  };
+
+  const updateGeminiKey = async (key: string) => {
+    setGeminiKey(key);
+    localStorage.setItem(STORAGE_KEY_GEMINI, key);
+    await saveConfigKey('gemini_api_key', key);
+    showToast("Clave de IA guardada y sincronizada");
   };
 
   const addAnalyst = async (user: AnalystUser) => {
@@ -713,7 +738,7 @@ const App: React.FC = () => {
             <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />
-            <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} /> : <Navigate to="/" />} />
+            <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} /> : <Navigate to="/" />} />
           </Routes>
         </main>
         <MobileNav />

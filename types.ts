@@ -45,6 +45,8 @@ export interface AIAnalysisResult {
   name: string;
   brand: string;
   presentation: Presentation;
+  lot?: string;
+  expiryDate?: string; // formato YYYY-MM-DD o null
 }
 
 export interface ImageCacheItem {

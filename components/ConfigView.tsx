@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LockClosedIcon, ShieldCheckIcon, EnvelopeIcon, UserPlusIcon, TrashIcon, UsersIcon } from '@heroicons/react/24/solid';
+import { LockClosedIcon, ShieldCheckIcon, EnvelopeIcon, UserPlusIcon, TrashIcon, UsersIcon, SparklesIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/solid';
 import { AnalystUser, Department } from '../types';
 
 interface Props {
@@ -9,14 +9,18 @@ interface Props {
   onRemoveAnalyst: (name: string) => void;
   currentMg: string | null;
   currentEmail: string;
+  geminiKey: string;
+  onUpdateGeminiKey: (key: string) => void;
 }
 
-const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst, onRemoveAnalyst, currentMg, currentEmail }) => {
+const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst, onRemoveAnalyst, currentMg, currentEmail, geminiKey, onUpdateGeminiKey }) => {
   const [mgInput, setMgInput] = useState('');
   const [emailInput, setEmailInput] = useState(currentEmail);
   const [newAnalystName, setNewAnalystName] = useState('');
   const [newAnalystDept, setNewAnalystDept] = useState<Department>('Fisicoquímico');
   const [success, setSuccess] = useState('');
+  const [geminiInput, setGeminiInput] = useState('');
+  const [showKey, setShowKey] = useState(false);
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +30,18 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
     setTimeout(() => setSuccess(''), 3000);
   };
 
+  const handleSaveGeminiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!geminiInput.trim()) return;
+    onUpdateGeminiKey(geminiInput.trim());
+    setGeminiInput('');
+    setSuccess('Clave de IA guardada y sincronizada.');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
   const handleAddAnalyst = (e: React.FormEvent) => {
     e.preventDefault();
     if (newAnalystName.trim()) {
-      // Verificar duplicados
       if (analysts.some(a => a.name.toLowerCase() === newAnalystName.trim().toLowerCase())) {
         alert("Este nombre ya existe.");
         return;
@@ -61,7 +73,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                 <EnvelopeIcon className="w-4 h-4 text-indigo-500" />
                 Correo Electrónico para Alertas
               </label>
-              <input 
+              <input
                 type="email"
                 placeholder="ejemplo@laboratorio.com"
                 className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none transition-all"
@@ -75,7 +87,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                 <LockClosedIcon className="w-4 h-4 text-indigo-500" />
                 Cambiar Clave Maestra
               </label>
-              <input 
+              <input
                 type="password"
                 placeholder="**** (Dejar vacío para no cambiar)"
                 className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none transition-all"
@@ -88,6 +100,59 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
               Actualizar Ajustes
             </button>
           </form>
+        </div>
+
+        {/* Sección IA */}
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 bg-violet-50 flex items-center gap-3">
+            <SparklesIcon className="w-6 h-6 text-violet-600" />
+            <div>
+              <h2 className="font-bold text-slate-800">Inteligencia Artificial</h2>
+              <p className="text-xs text-slate-500">Clave para lectura de etiquetas por cámara</p>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold ${geminiKey ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+              <div className={`w-2 h-2 rounded-full ${geminiKey ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {geminiKey ? 'Clave configurada y activa' : 'Sin clave — escaneo por cámara deshabilitado'}
+            </div>
+
+            <form onSubmit={handleSaveGeminiKey} className="space-y-3">
+              <label className="text-sm font-bold text-slate-700">
+                {geminiKey ? 'Reemplazar clave de Gemini' : 'Ingresar clave de Gemini'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  placeholder="AIzaSy..."
+                  className="w-full px-4 py-3 pr-12 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-violet-500 outline-none transition-all font-mono text-sm"
+                  value={geminiInput}
+                  onChange={(e) => setGeminiInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showKey ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                </button>
+              </div>
+              <button
+                type="submit"
+                disabled={!geminiInput.trim()}
+                className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white font-bold py-3 rounded-2xl shadow-lg transition-all"
+              >
+                Guardar Clave
+              </button>
+            </form>
+
+            <div className="bg-slate-50 rounded-2xl p-4 text-xs text-slate-500 space-y-1">
+              <p className="font-bold text-slate-700">¿Cómo obtener la clave gratuita?</p>
+              <p>1. Abre <span className="font-mono bg-slate-200 px-1 rounded">aistudio.google.com</span></p>
+              <p>2. Clic en <strong>"Get API key"</strong> → <strong>"Create API key"</strong></p>
+              <p>3. Copia y pega aquí. El plan gratuito incluye 1.500 consultas/día.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -102,10 +167,10 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
             <UsersIcon className="w-6 h-6 text-indigo-600" />
             <h2 className="font-bold text-slate-800">Personal Registrado</h2>
           </div>
-          
+
           <div className="p-6 space-y-6">
             <form onSubmit={handleAddAnalyst} className="space-y-3">
-              <input 
+              <input
                 type="text"
                 placeholder="Nombre del analista..."
                 required
@@ -114,7 +179,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                 onChange={(e) => setNewAnalystName(e.target.value)}
               />
               <div className="flex gap-2">
-                <select 
+                <select
                   className="flex-grow px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none font-bold text-slate-600"
                   value={newAnalystDept}
                   onChange={(e) => setNewAnalystDept(e.target.value as Department)}
@@ -137,7 +202,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                       <p className="font-bold text-slate-800">{a.name}</p>
                       <p className="text-[10px] text-indigo-500 font-black uppercase tracking-widest">{a.department}</p>
                     </div>
-                    <button 
+                    <button
                       onClick={() => onRemoveAnalyst(a.name)}
                       className="p-2 text-slate-400 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
                     >
