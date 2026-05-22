@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { AIAnalysisResult, ImageCacheItem } from "../types";
@@ -51,20 +51,6 @@ const analyzeWithGemini = async (base64Image: string, prompt: string, modelName:
         { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
         { text: prompt }
       ]
-    },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          name:         { type: Type.STRING },
-          brand:        { type: Type.STRING },
-          presentation: { type: Type.STRING, description: "Must be 'Líquido', 'Sólido', or 'Paquete'" },
-          lot:          { type: Type.STRING },
-          expiryDate:   { type: Type.STRING }
-        },
-        required: ["name", "brand", "presentation"]
-      }
     }
   });
   return response?.text || "{}";
@@ -127,10 +113,9 @@ export const analyzeReagentLabel = async (
   const providers = [];
 
   if (geminiApiKey) {
-    // Modelos disponibles en v1beta (API key de aistudio.google.com)
-    providers.push({ name: 'Gemini 2.0 Flash',       fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash',                   geminiApiKey) });
-    providers.push({ name: 'Gemini 2.0 Flash Lite',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash-lite',               geminiApiKey) });
-    providers.push({ name: 'Gemini 1.5 Flash',       fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-flash-latest',             geminiApiKey) });
+    // Modelos v1beta disponibles con API key de aistudio.google.com
+    providers.push({ name: 'Gemini 2.5 Flash', fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.5-flash', geminiApiKey) });
+    providers.push({ name: 'Gemini 2.0 Flash', fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash', geminiApiKey) });
   }
   if (openaiApiKey) {
     providers.push({ name: 'OpenAI GPT-4o-mini', fn: () => analyzeWithOpenAI(base64Image, prompt, openaiApiKey) });
