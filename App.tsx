@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { HashRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { 
+import {
   BeakerIcon, QueueListIcon, BellAlertIcon, PlusCircleIcon, MinusCircleIcon,
   ArrowRightOnRectangleIcon, HomeIcon, ChevronRightIcon, LockClosedIcon,
-  Cog6ToothIcon, ClockIcon, CloudIcon, ArrowPathIcon, WifiIcon, ExclamationTriangleIcon, UserIcon
+  Cog6ToothIcon, ClockIcon, CloudIcon, ArrowPathIcon, WifiIcon, ExclamationTriangleIcon, UserIcon,
+  CalendarDaysIcon
 } from '@heroicons/react/24/outline';
 
 import { Reagent, Transaction, UserRole, AnalystUser } from './types';
@@ -17,6 +18,7 @@ import AlertsView from './components/AlertsView';
 import ConfigView from './components/ConfigView';
 import CloudSyncView from './components/CloudSyncView';
 import EditReagentModal from './components/EditReagentModal';
+import ExpiryModal from './components/ExpiryModal';
 import { generateId, formatQuantity, normalizeToUnit } from './utils';
 
 // --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
@@ -89,6 +91,7 @@ const App: React.FC = () => {
   
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'alert' | 'error' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showExpiryModal, setShowExpiryModal] = useState(false);
 
   // --- Inicialización de Supabase ---
   const supabase: SupabaseClient | null = useMemo(() => {
@@ -579,8 +582,12 @@ const App: React.FC = () => {
       { path: '/ingreso', icon: PlusCircleIcon, label: 'Entra' },
       { path: '/salida', icon: MinusCircleIcon, label: 'Sale' },
       { path: '/historial', icon: ClockIcon, label: 'Histo' },
-      ...(role === 'GERENTE' ? [{ path: '/alertas', icon: BellAlertIcon, label: 'Alertas' }, { path: '/nube', icon: CloudIcon, label: 'Nube' }] : [])
+      ...(role === 'GERENTE' ? [{ path: '/alertas', icon: BellAlertIcon, label: 'Alertas' }] : [])
     ];
+    const urgentCount = reagents.filter(r => {
+      if (!r.expiryDate || r.expiryDate === 'N/A') return false;
+      return Math.ceil((new Date(r.expiryDate).getTime() - Date.now()) / 86400000) <= 30;
+    }).length;
     return (
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50">
         {navItems.map(item => (
@@ -589,6 +596,11 @@ const App: React.FC = () => {
             <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{item.label}</span>
           </Link>
         ))}
+        <button onClick={() => setShowExpiryModal(true)} className="relative flex flex-col items-center justify-center w-full h-full transition-colors text-slate-400 hover:text-indigo-600">
+          <CalendarDaysIcon className="w-6 h-6" />
+          {urgentCount > 0 && <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{urgentCount}</span>}
+          <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">Vence</span>
+        </button>
       </div>
     );
   };
@@ -713,6 +725,12 @@ const App: React.FC = () => {
               <Link to="/ingreso" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Ingresos</Link>
               <Link to="/salida" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Salidas</Link>
               <Link to="/historial" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Historial</Link>
+              <button onClick={() => setShowExpiryModal(true)} className="relative text-slate-400 hover:text-indigo-600 p-1">
+                <CalendarDaysIcon className="w-5 h-5" />
+                {reagents.some(r => r.expiryDate && r.expiryDate !== 'N/A' && Math.ceil((new Date(r.expiryDate).getTime() - Date.now()) / 86400000) <= 30) && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full" />
+                )}
+              </button>
               {role === 'GERENTE' && (
                 <>
                   <Link to="/alertas" className="text-slate-600 hover:text-red-600 font-bold text-sm">Alertas</Link>
@@ -755,6 +773,12 @@ const App: React.FC = () => {
             reagent={reagents.find(r => r.id === editingReagentId)!}
             onClose={() => setEditingReagentId(null)}
             onSave={handleEditReagent}
+          />
+        )}
+        {showExpiryModal && (
+          <ExpiryModal
+            reagents={reagents}
+            onClose={() => setShowExpiryModal(false)}
           />
         )}
       </div>
