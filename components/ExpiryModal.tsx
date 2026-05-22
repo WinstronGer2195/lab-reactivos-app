@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Reagent } from '../types';
-import { XMarkIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
-import { ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, CalendarDaysIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 
 interface Props {
   reagents: Reagent[];
@@ -29,12 +29,18 @@ const STATUS_STYLE: Record<ExpiryStatus, { row: string; badge: string; label: (d
   na:       { row: 'bg-slate-50 border-slate-200',  badge: 'bg-slate-300 text-slate-600',  label: () => 'Sin fecha' },
 };
 
+const DEPTS = ['all', 'Fisicoquímico', 'Microbiología', 'Molecular'] as const;
+const DEPT_LABELS: Record<string, string> = { all: 'Todos', Fisicoquímico: 'Fisicoquímico', Microbiología: 'Microbiología', Molecular: 'Molecular' };
+
 const ExpiryModal: React.FC<Props> = ({ reagents, onClose }) => {
+  const [deptFilter, setDeptFilter] = useState<string>('all');
+
   const sorted = useMemo(() => {
     return [...reagents]
+      .filter(r => deptFilter === 'all' || r.department === deptFilter)
       .map(r => ({ ...r, ...getStatus(r.expiryDate) }))
       .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.days - b.days);
-  }, [reagents]);
+  }, [reagents, deptFilter]);
 
   const counts = useMemo(() => ({
     expired:  sorted.filter(r => r.status === 'expired').length,
@@ -63,6 +69,20 @@ const ExpiryModal: React.FC<Props> = ({ reagents, onClose }) => {
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-xl transition-colors">
             <XMarkIcon className="w-6 h-6" />
           </button>
+        </div>
+
+        {/* Filtro por departamento */}
+        <div className="flex gap-2 px-6 py-3 bg-white border-b border-slate-100 flex-wrap shrink-0 items-center">
+          <FunnelIcon className="w-4 h-4 text-slate-400 shrink-0" />
+          {DEPTS.map(dept => (
+            <button
+              key={dept}
+              onClick={() => setDeptFilter(dept)}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${deptFilter === dept ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            >
+              {DEPT_LABELS[dept]}
+            </button>
+          ))}
         </div>
 
         {/* Summary chips */}
