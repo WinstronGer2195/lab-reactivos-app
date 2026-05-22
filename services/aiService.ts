@@ -60,10 +60,10 @@ const analyzeWithGemini = async (base64Image: string, prompt: string, modelName:
           name:         { type: Type.STRING },
           brand:        { type: Type.STRING },
           presentation: { type: Type.STRING, description: "Must be 'Líquido', 'Sólido', or 'Paquete'" },
-          lot:          { type: Type.STRING, description: "Lot number or empty string if not visible" },
-          expiryDate:   { type: Type.STRING, description: "YYYY-MM-DD or empty string if not visible" }
+          lot:          { type: Type.STRING },
+          expiryDate:   { type: Type.STRING }
         },
-        required: ["name", "brand", "presentation", "lot", "expiryDate"]
+        required: ["name", "brand", "presentation"]
       }
     }
   });
@@ -127,10 +127,10 @@ export const analyzeReagentLabel = async (
   const providers = [];
 
   if (geminiApiKey) {
-    // Modelos estables con visión, de más rápido a más potente
-    providers.push({ name: 'Gemini 2.0 Flash',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash',  geminiApiKey) });
-    providers.push({ name: 'Gemini 1.5 Flash',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-flash',  geminiApiKey) });
-    providers.push({ name: 'Gemini 1.5 Pro',    fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-pro',    geminiApiKey) });
+    // Modelos disponibles en v1beta (API key de aistudio.google.com)
+    providers.push({ name: 'Gemini 2.0 Flash',       fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash',                   geminiApiKey) });
+    providers.push({ name: 'Gemini 2.0 Flash Lite',  fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-2.0-flash-lite',               geminiApiKey) });
+    providers.push({ name: 'Gemini 1.5 Flash',       fn: () => analyzeWithGemini(base64Image, prompt, 'gemini-1.5-flash-latest',             geminiApiKey) });
   }
   if (openaiApiKey) {
     providers.push({ name: 'OpenAI GPT-4o-mini', fn: () => analyzeWithOpenAI(base64Image, prompt, openaiApiKey) });
