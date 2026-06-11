@@ -54,6 +54,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     baseUnit: 'mL',
     expiryDate: '',
     lot: '',
+    cas: '',
     department: (currentUser?.department || 'Fisicoquímico') as Department,
     analystName: currentUser?.name || (userRole === 'GERENTE' ? 'GERENTE' : ''),
     minStock: 0,
@@ -202,6 +203,8 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         return '';
       };
 
+      const newCas = analysisResult.cas && analysisResult.cas !== 'null' ? analysisResult.cas.trim() : '';
+
       setFormData(prev => ({
         ...prev,
         name: upperName,
@@ -209,50 +212,73 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
         presentation: newPresentation,
         baseUnit: newBaseUnit,
         lot: analysisResult.lot && analysisResult.lot !== 'null' ? analysisResult.lot : prev.lot,
-        expiryDate: parseAIDate(analysisResult.expiryDate) || prev.expiryDate
+        expiryDate: parseAIDate(analysisResult.expiryDate) || prev.expiryDate,
+        cas: newCas || prev.cas
       }));
 
-      const existingExact = reagents.find(r => 
-        r.name.toUpperCase() === upperName && 
-        r.brand.toUpperCase() === upperBrand
-      );
-
-      if (existingExact) {
+      // 1. Match prioritario por CAS (identificador único universal)
+      const existingByCas = newCas ? reagents.find(r => r.cas && r.cas === newCas) : null;
+      if (existingByCas) {
         setIsExisting(true);
         setIsNewBrandForExisting(false);
-        setSelectedReagentId(existingExact.id);
-        setIsCustomUnitMode(false); 
-        setFormData(prev => ({ 
-          ...prev, 
-          baseUnit: existingExact.baseUnit, 
-          containerType: existingExact.containerType,
-          quantityPerContainer: existingExact.quantityPerContainer,
-          minStock: existingExact.minStock,
-          department: existingExact.department,
-          presentation: existingExact.presentation
+        setSelectedReagentId(existingByCas.id);
+        setIsCustomUnitMode(false);
+        setFormData(prev => ({
+          ...prev,
+          name: existingByCas.name,  // Usa el nombre en español ya guardado
+          brand: existingByCas.brand,
+          baseUnit: existingByCas.baseUnit,
+          containerType: existingByCas.containerType,
+          quantityPerContainer: existingByCas.quantityPerContainer,
+          minStock: existingByCas.minStock,
+          department: existingByCas.department,
+          presentation: existingByCas.presentation,
+          cas: newCas
         }));
       } else {
-        const existingName = reagents.find(r => r.name.toUpperCase() === upperName);
-        if (existingName) {
-          setIsExisting(false);
-          setIsNewBrandForExisting(true);
-          setSelectedReagentId('');
+        // 2. Match por nombre + marca exactos
+        const existingExact = reagents.find(r =>
+          r.name.toUpperCase() === upperName && r.brand.toUpperCase() === upperBrand
+        );
+        if (existingExact) {
+          setIsExisting(true);
+          setIsNewBrandForExisting(false);
+          setSelectedReagentId(existingExact.id);
           setIsCustomUnitMode(false);
           setFormData(prev => ({
             ...prev,
-            name: existingName.name,
-            brand: upperBrand,
-            baseUnit: existingName.baseUnit,
-            containerType: existingName.containerType,
-            quantityPerContainer: existingName.quantityPerContainer,
-            minStock: existingName.minStock,
-            department: existingName.department,
-            presentation: existingName.presentation
+            baseUnit: existingExact.baseUnit,
+            containerType: existingExact.containerType,
+            quantityPerContainer: existingExact.quantityPerContainer,
+            minStock: existingExact.minStock,
+            department: existingExact.department,
+            presentation: existingExact.presentation
           }));
         } else {
-          setIsExisting(false);
-          setIsNewBrandForExisting(false);
-          setIsCustomUnitMode(false);
+          // 3. Match solo por nombre → nueva marca para reactivo existente
+          const existingName = reagents.find(r => r.name.toUpperCase() === upperName);
+          if (existingName) {
+            setIsExisting(false);
+            setIsNewBrandForExisting(true);
+            setSelectedReagentId('');
+            setIsCustomUnitMode(false);
+            setFormData(prev => ({
+              ...prev,
+              name: existingName.name,
+              brand: upperBrand,
+              baseUnit: existingName.baseUnit,
+              containerType: existingName.containerType,
+              quantityPerContainer: existingName.quantityPerContainer,
+              minStock: existingName.minStock,
+              department: existingName.department,
+              presentation: existingName.presentation,
+              cas: newCas || existingName.cas || ''
+            }));
+          } else {
+            setIsExisting(false);
+            setIsNewBrandForExisting(false);
+            setIsCustomUnitMode(false);
+          }
         }
       }
     } catch (error: any) {
@@ -288,12 +314,13 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     onTransaction(
       {
         id: finalReagentId,
-        name: formData.name.toUpperCase(), // Asegurar mayúsculas al guardar
-        brand: formData.brand.toUpperCase(), // Asegurar mayúsculas al guardar
+        name: formData.name.toUpperCase(),
+        brand: formData.brand.toUpperCase(),
         presentation: formData.presentation,
         department: formData.department,
         expiryDate: formData.expiryDate || 'N/A',
         lot: formData.lot || '',
+        cas: formData.cas || '',
         minStock: finalMinStock,
         containerType: formData.containerType,
         quantityPerContainer: finalQuantityPerContainer,
@@ -315,10 +342,9 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     setFormData(prev => ({
       ...prev,
       name: '', brand: '', presentation: 'Líquido', containerType: 'Frascos',
-      quantityEntered: 0, quantityPerContainer: 1, baseUnit: 'mL', 
-      expiryDate: '', lot: '', minStock: 0,
+      quantityEntered: 0, quantityPerContainer: 1, baseUnit: 'mL',
+      expiryDate: '', lot: '', cas: '', minStock: 0,
       verificationStatus: 'No Conforme',
-      // Si es Gerente y estaba creando uno nuevo, resetear depto a default, si es analista mantener su depto
       department: currentUser?.department || 'Fisicoquímico'
     }));
     setIsExisting(false);
@@ -596,10 +622,23 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 </div>
               </div>
 
-              {/* Sección Lote y Vencimiento */}
+              {/* Sección Lote, CAS y Vencimiento */}
               <div className="space-y-2">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Lote</label>
                 <input type="text" placeholder="Ej: L-12345" className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none" value={formData.lot || ''} onChange={e => setFormData({...formData, lot: e.target.value})} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                  N° CAS <span className="text-indigo-400 normal-case font-bold">(Auto)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: 67-56-1"
+                  className={`w-full px-4 py-3 border-2 rounded-xl outline-none font-mono text-sm ${formData.cas ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : 'bg-slate-50 border-slate-200'}`}
+                  value={formData.cas || ''}
+                  onChange={e => setFormData({...formData, cas: e.target.value})}
+                />
               </div>
 
               <div className="space-y-2">

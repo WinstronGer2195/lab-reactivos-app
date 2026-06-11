@@ -179,7 +179,8 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       displayQuantity: outputMode === 'CONTAINER' ? formData.containers : formData.amount,
       displayUnit: outputMode === 'CONTAINER' ? selectedReagent.containerType : selectedReagent.baseUnit,
       analyst: formData.analystName,
-      lot: selectedReagent.lot
+      lot: selectedReagent.lot || '',
+      reagentBrand: selectedReagent.brand
     });
 
     setSelectedReagentId('');

@@ -1,54 +1,52 @@
 import Tesseract from 'tesseract.js';
 import { Reagent } from '../types';
 
-export const findReagentInImageLocally = async (
-  base64Image: string, 
-  existingReagents: Reagent[]
-): Promise<{ name: string; brand: string; presentation: string } | null> => {
-  try {
-    // Convert base64 to a format Tesseract can use (data URI)
-    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
-    
-    // Run OCR
-    const { data: { text } } = await Tesseract.recognize(
-      dataUrl,
-      'spa+eng', // Spanish and English
-      { logger: m => console.log(m) }
-    );
-    
-    const lowerText = text.toLowerCase();
-    console.log("Extracted text from image:", lowerText);
+const extractCasFromText = (text: string): string | null => {
+  const match = text.match(/cas[:\s#]*(\d{1,7}-\d{2}-\d)/i);
+  return match ? match[1] : null;
+};
 
-    // Try to find an exact match (name + brand)
+export const findReagentInImageLocally = async (
+  base64Image: string,
+  existingReagents: Reagent[]
+): Promise<{ name: string; brand: string; presentation: string; cas?: string } | null> => {
+  try {
+    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+    const { data: { text } } = await Tesseract.recognize(dataUrl, 'spa+eng', { logger: m => console.log(m) });
+    const lowerText = text.toLowerCase();
+    console.log("OCR text:", lowerText);
+
+    // 1. Intentar match por CAS (más confiable)
+    const casNumber = extractCasFromText(text);
+    if (casNumber) {
+      const reagentByCas = existingReagents.find(r => r.cas && r.cas === casNumber);
+      if (reagentByCas) {
+        console.log(`OCR CAS match: ${casNumber} → ${reagentByCas.name}`);
+        return { name: reagentByCas.name, brand: reagentByCas.brand, presentation: reagentByCas.presentation, cas: casNumber };
+      }
+    }
+
+    // 2. Match por nombre + marca
     for (const reagent of existingReagents) {
       const nameMatch = lowerText.includes(reagent.name.toLowerCase());
       const brandMatch = lowerText.includes(reagent.brand.toLowerCase());
-      
       if (nameMatch && brandMatch) {
-        console.log(`Found exact match locally: ${reagent.name} (${reagent.brand})`);
-        return {
-          name: reagent.name,
-          brand: reagent.brand,
-          presentation: reagent.presentation
-        };
+        console.log(`OCR nombre+marca match: ${reagent.name} (${reagent.brand})`);
+        return { name: reagent.name, brand: reagent.brand, presentation: reagent.presentation, cas: casNumber || undefined };
       }
     }
 
-    // If no exact match, try to find just the name
+    // 3. Match solo por nombre
     for (const reagent of existingReagents) {
       if (lowerText.includes(reagent.name.toLowerCase())) {
-        console.log(`Found name match locally: ${reagent.name}`);
-        return {
-          name: reagent.name,
-          brand: reagent.brand,
-          presentation: reagent.presentation
-        };
+        console.log(`OCR nombre match: ${reagent.name}`);
+        return { name: reagent.name, brand: reagent.brand, presentation: reagent.presentation, cas: casNumber || undefined };
       }
     }
 
-    return null; // No match found
+    return null;
   } catch (error) {
-    console.error("Local OCR failed:", error);
+    console.error("OCR falló:", error);
     return null;
   }
 };

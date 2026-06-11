@@ -47,16 +47,17 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> =>
 const PROMPT = (contextText: string) => `Analiza esta imagen de una etiqueta de reactivo de laboratorio con ALTA PRECISIÓN.${contextText}
 
 INSTRUCCIONES — extrae estos campos:
-1. name: Nombre químico completo (ej: "Metanol Absoluto", "Ácido Sulfúrico 98%"). En mayúsculas.
-2. brand: Marca del fabricante (ej: "CICARELLI", "MERCK"). Si no es visible, usa "GENERICO". En mayúsculas.
+1. name: Nombre químico completo EN ESPAÑOL. Si el frasco está en inglés, TRADUCE el nombre (ej: "Methanol" → "METANOL", "Sulfuric Acid" → "ÁCIDO SULFÚRICO", "Sodium Chloride" → "CLORURO DE SODIO"). En MAYÚSCULAS.
+2. brand: Marca del fabricante (ej: "CICARELLI", "MERCK", "ANEDRA"). Si no es visible, usa "GENERICO". En MAYÚSCULAS.
 3. presentation: Clasifica OBLIGATORIAMENTE como "Líquido", "Sólido" o "Paquete".
    - Unidades de volumen (mL, L, uL) → "Líquido"
    - Unidades de masa (g, kg, mg) → "Sólido"
    - Sin unidad de medida o unidades sueltas → "Paquete"
 4. lot: Número de lote. Puede aparecer como "Lot:", "Lote:", "L/N:", "Batch:", "B/N:" seguido de código alfanumérico. String vacío si no está visible.
 5. expiryDate: Fecha de vencimiento ("Exp:", "Vto:", "VTO:", "EXP:", "Use by:", "Vence:"). NORMALIZA a YYYY-MM-DD. Si solo hay mes/año (ej: "12/2026") usa el último día del mes (ej: "2026-12-31"). String vacío si no está visible.
+6. cas: Número CAS del compuesto. Aparece como "CAS:", "CAS No:", "CAS#" seguido de formato XXXXX-XX-X (ej: "67-56-1", "7647-01-0"). String vacío si no está visible.
 
-Responde ÚNICAMENTE con un objeto JSON válido con las claves: name, brand, presentation, lot, expiryDate.`;
+Responde ÚNICAMENTE con un objeto JSON válido con las claves: name, brand, presentation, lot, expiryDate, cas.`;
 
 const analyzeWithGemini = async (base64Image: string, prompt: string, modelName: string, apiKey: string): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey });
@@ -87,7 +88,7 @@ const analyzeWithAnthropic = async (base64Image: string, prompt: string, apiKey:
     max_tokens: 1024,
     messages: [{ role: 'user', content: [
       { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64Image } },
-      { type: 'text', text: prompt + '\n\nResponde ÚNICAMENTE con JSON válido: {"name":"...","brand":"...","presentation":"...","lot":"...","expiryDate":"..."}' }
+      { type: 'text', text: prompt + '\n\nResponde ÚNICAMENTE con JSON válido: {"name":"...","brand":"...","presentation":"...","lot":"...","expiryDate":"...","cas":"..."}' }
     ]}]
   });
   // @ts-ignore

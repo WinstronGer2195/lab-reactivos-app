@@ -219,6 +219,7 @@ const App: React.FC = () => {
             lastUpdated: r.last_updated,
             expiryDate: r.expiry_date,
             lot: r.lot || '',
+            cas: r.cas || '',
             containerType: r.container_type,
             baseUnit: r.base_unit,
             isOrdered: r.is_ordered,
@@ -235,6 +236,7 @@ const App: React.FC = () => {
           ...t,
           reagentId: t.reagent_id,
           reagentName: t.reagent_name,
+          reagentBrand: t.reagent_brand || '',
           displayQuantity: parseFloat(t.display_quantity),
           displayUnit: t.display_unit,
           quantity: parseFloat(t.quantity),
@@ -489,7 +491,8 @@ const App: React.FC = () => {
           id: updatedReagent.id, name: updatedReagent.name, brand: updatedReagent.brand, presentation: updatedReagent.presentation,
           current_stock: updatedReagent.currentStock, min_stock: updatedReagent.minStock, department: updatedReagent.department,
           base_unit: updatedReagent.baseUnit, container_type: updatedReagent.containerType, quantity_per_container: updatedReagent.quantityPerContainer,
-          expiry_date: updatedReagent.expiryDate, lot: updatedReagent.lot || null, is_ordered: updatedReagent.isOrdered, last_updated: timestamp,
+          expiry_date: updatedReagent.expiryDate, lot: updatedReagent.lot || null, cas: updatedReagent.cas || null,
+          is_ordered: updatedReagent.isOrdered, last_updated: timestamp,
           is_deleted: false
         });
         if (rError) throw rError;
@@ -498,7 +501,8 @@ const App: React.FC = () => {
           id: newTransaction.id, reagent_id: newTransaction.reagentId, reagent_name: newTransaction.reagentName,
           type: newTransaction.type, quantity: newTransaction.quantity, display_quantity: newTransaction.displayQuantity,
           display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp,
-          lot: newTransaction.lot || null, verification_status: newTransaction.verificationStatus || null
+          lot: newTransaction.lot || null, reagent_brand: updatedReagent.brand || null,
+          verification_status: newTransaction.verificationStatus || null
         });
         if (txError) throw txError;
         setEditingReagentId(null);
@@ -535,14 +539,18 @@ const App: React.FC = () => {
            newBaseUnit = reagent.baseUnit;
         }
 
-        finalReagent = { 
-          ...updatedReagents[idx], 
-          currentStock: formatQuantity(newStock + transactionData.quantity, updatedReagents[idx].presentation), 
+        finalReagent = {
+          ...updatedReagents[idx],
+          currentStock: formatQuantity(newStock + transactionData.quantity, updatedReagents[idx].presentation),
           minStock: newMinStock,
           quantityPerContainer: newQuantityPerContainer,
           baseUnit: newBaseUnit,
           lastUpdated: timestamp,
-          isOrdered: false // Si entra stock, ya no está pedido
+          // Actualiza lote y CAS si el nuevo ingreso los trae (reposición de stock)
+          lot: (reagent.lot !== undefined && reagent.lot !== '') ? reagent.lot : updatedReagents[idx].lot,
+          cas: (reagent.cas !== undefined && reagent.cas !== '') ? reagent.cas : updatedReagents[idx].cas,
+          expiryDate: (reagent.expiryDate && reagent.expiryDate !== 'N/A') ? reagent.expiryDate : updatedReagents[idx].expiryDate,
+          isOrdered: false
         };
         updatedReagents[idx] = finalReagent;
       } else {
@@ -558,9 +566,11 @@ const App: React.FC = () => {
           containerType: reagent.containerType || 'Frasco',
           quantityPerContainer: reagent.quantityPerContainer || 1,
           expiryDate: reagent.expiryDate || 'N/A',
+          lot: reagent.lot || '',
+          cas: reagent.cas || '',
           isOrdered: false,
           lastUpdated: timestamp,
-          isDeleted: false // Asegurar que no nazca borrado
+          isDeleted: false
         };
         updatedReagents.push(finalReagent);
         reagentId = finalReagent.id;
@@ -602,7 +612,14 @@ const App: React.FC = () => {
       }
     }
 
-    const newTransaction: Transaction = { ...transactionData, id: generateId(), reagentId: reagentId!, reagentName: finalReagent.name, timestamp };
+    const newTransaction: Transaction = {
+      ...transactionData,
+      id: generateId(),
+      reagentId: reagentId!,
+      reagentName: finalReagent.name,
+      reagentBrand: finalReagent.brand,
+      timestamp
+    };
 
     // 1. GUARDAR EN SUPABASE PRIMERO — la UI no se actualiza hasta confirmar en DB
     if (supabase) {
@@ -612,7 +629,8 @@ const App: React.FC = () => {
         id: finalReagent.id, name: finalReagent.name, brand: finalReagent.brand, presentation: finalReagent.presentation,
         current_stock: finalReagent.currentStock, min_stock: finalReagent.minStock, department: finalReagent.department,
         base_unit: finalReagent.baseUnit, container_type: finalReagent.containerType, quantity_per_container: finalReagent.quantityPerContainer,
-        expiry_date: finalReagent.expiryDate, lot: finalReagent.lot || null, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
+        expiry_date: finalReagent.expiryDate, lot: finalReagent.lot || null, cas: finalReagent.cas || null,
+        is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
         is_deleted: false
       });
 
@@ -629,6 +647,7 @@ const App: React.FC = () => {
         type: newTransaction.type, quantity: newTransaction.quantity, display_quantity: newTransaction.displayQuantity,
         display_unit: newTransaction.displayUnit, analyst: newTransaction.analyst, timestamp: newTransaction.timestamp,
         lot: newTransaction.lot || null,
+        reagent_brand: newTransaction.reagentBrand || null,
         verification_status: newTransaction.verificationStatus || null
       });
 
@@ -638,7 +657,9 @@ const App: React.FC = () => {
           ? "Falta la columna 'verification_status' en Supabase"
           : txError.message.includes('lot')
             ? "Falta la columna 'lot' en Supabase (transactions)"
-            : "Error al registrar la transacción. Revisa el inventario.", "error");
+            : txError.message.includes('reagent_brand')
+              ? "Falta la columna 'reagent_brand' en Supabase (transactions)"
+              : "Error al registrar la transacción. Revisa el inventario.", "error");
         pullData();
         return;
       }

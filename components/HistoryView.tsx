@@ -33,8 +33,9 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
         const matchesName = t.reagentName.toLowerCase().includes(lowerSearch);
         const matchesAnalyst = t.analyst.toLowerCase().includes(lowerSearch);
         const matchesLot = t.lot?.toLowerCase().includes(lowerSearch) || false;
-        
-        if (!matchesName && !matchesAnalyst && !matchesLot) {
+        const matchesBrand = t.reagentBrand?.toLowerCase().includes(lowerSearch) || false;
+
+        if (!matchesName && !matchesAnalyst && !matchesLot && !matchesBrand) {
           return false;
         }
       }
@@ -86,6 +87,7 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Fecha</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tipo</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Reactivo</th>
+                <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Marca</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Lote</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Movimiento</th>
                 <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Equiv.</th>
@@ -103,6 +105,9 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
                     </span>
                   </td>
                   <td className="px-6 py-4 font-semibold text-slate-800 text-sm">{t.reagentName}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-slate-600">
+                    {t.reagentBrand || reagents.find(r => r.id === t.reagentId)?.brand || '-'}
+                  </td>
                   <td className="px-6 py-4 text-xs font-medium text-slate-600">{t.lot || '-'}</td>
                   <td className="px-6 py-4 text-sm font-medium text-slate-700">{t.displayQuantity} {t.displayUnit}</td>
                   <td className="px-6 py-4 text-sm font-bold text-slate-900">
@@ -125,7 +130,7 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
               ))}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
                     No se encontraron movimientos que coincidan con la búsqueda.
                   </td>
                 </tr>

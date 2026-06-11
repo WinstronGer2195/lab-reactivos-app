@@ -22,6 +22,7 @@ export interface Reagent {
   quantityPerContainer: number; // e.g., 500 (if 500mL per bottle)
   expiryDate: string; // ISO string or "N/A"
   lot?: string; // Lote
+  cas?: string; // Número CAS único del compuesto (ej: "67-56-1")
   isOrdered: boolean;
   lastUpdated: string;
   isDeleted?: boolean; // Soft delete flag
@@ -31,6 +32,7 @@ export interface Transaction {
   id: string;
   reagentId: string;
   reagentName: string;
+  reagentBrand?: string; // Marca explícita para auditoría (no depende de que el reactivo exista)
   type: TransactionType;
   quantity: number; // amount in baseUnit
   displayQuantity: number; // amount as entered (e.g., 10 bottles)
@@ -47,6 +49,7 @@ export interface AIAnalysisResult {
   presentation: Presentation;
   lot?: string;
   expiryDate?: string; // formato YYYY-MM-DD o null
+  cas?: string; // Número CAS (ej: "67-56-1")
 }
 
 export interface ImageCacheItem {
