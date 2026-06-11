@@ -32,6 +32,7 @@ const BASE_UNITS_PKG = ['unidades', 'Rx'];
 const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole, supabase }) => {
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [duplicateWarning, setDuplicateWarning] = useState<{ name: string; brand: string; stock: number; unit: string } | null>(null);
   const [isExisting, setIsExisting] = useState(false);
   const [isNewBrandForExisting, setIsNewBrandForExisting] = useState(false);
@@ -148,15 +149,10 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     return formatQuantity(formData.quantityEntered * formData.quantityPerContainer, formData.presentation);
   }, [formData.quantityEntered, formData.quantityPerContainer, formData.presentation]);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const runAIAnalysis = async (base64: string) => {
     setLoading(true);
+    setAiError(null);
     try {
-      const base64 = await fileToBase64(file);
-      setCurrentImageBase64(base64);
-
       // 1. Verificar cache de Supabase primero (resultado instantáneo para imágenes repetidas)
       let analysisResult = null;
       if (supabase) {
@@ -167,7 +163,6 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       // 2. Si no está en cache, llamar a la IA
       if (!analysisResult) {
         analysisResult = await analyzeReagentLabel(base64, reagents.map(r => ({ name: r.name, brand: r.brand })));
-        // Guardar en cache para la próxima vez
         if (supabase) saveCachedResult(supabase, base64, analysisResult);
       }
       
@@ -283,10 +278,18 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       }
     } catch (error: any) {
       console.error(error);
-      setFormError(error.message || "Error al analizar la etiqueta. Intentá seleccionar manualmente.");
+      setAiError("Los modelos de IA están ocupados en este momento. Podés reintentar en unos segundos o completar los datos manualmente.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base64 = await fileToBase64(file);
+    setCurrentImageBase64(base64);
+    await runAIAnalysis(base64);
   };
 
   const doSubmit = () => {
@@ -412,7 +415,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
             <input type="file" ref={fileInputRef} className="hidden" capture="environment" accept="image/*" onChange={handleImageUpload} />
 
             <div className="relative" ref={dropdownRef}>
-              <div 
+              <div
                 className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-indigo-500 cursor-pointer flex justify-between items-center h-full"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               >
@@ -524,6 +527,24 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
               )}
             </div>
           </div>
+
+          {aiError && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-start gap-2 flex-1">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium text-amber-800">{aiError}</p>
+              </div>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => currentImageBase64 && runAIAnalysis(currentImageBase64)}
+                className="shrink-0 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2 rounded-xl transition-all disabled:opacity-50"
+              >
+                {loading ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <ArrowPathIcon className="w-4 h-4" />}
+                Reintentar
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
