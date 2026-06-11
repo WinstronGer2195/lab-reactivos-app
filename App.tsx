@@ -60,9 +60,10 @@ interface MobileNavProps {
   role: UserRole | null;
   reagents: Reagent[];
   onOpenExpiryModal: () => void;
+  syncQueueCount: number;
 }
 
-const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal }) => {
+const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal, syncQueueCount }) => {
   const location = useLocation();
   const navItems = role === 'GERENTE'
     ? [
@@ -85,8 +86,13 @@ const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50">
       {navItems.map(item => (
-        <Link key={item.path} to={item.path} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
+        <Link key={item.path} to={item.path} className={`relative flex flex-col items-center justify-center w-full h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
           <item.icon className="w-6 h-6" />
+          {item.path === '/nube' && syncQueueCount > 0 && (
+            <span className="absolute top-1 right-2 bg-amber-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+              {syncQueueCount > 9 ? '9+' : syncQueueCount}
+            </span>
+          )}
           <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{item.label}</span>
         </Link>
       ))}
@@ -118,6 +124,9 @@ const App: React.FC = () => {
   const [cloudUrl, setCloudUrl] = useState<string>(
     localStorage.getItem(STORAGE_KEY_CLOUD_URL) || ''
   );
+  const [syncQueueCount, setSyncQueueCount] = useState<number>(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]').length; } catch { return 0; }
+  });
 
   const [role, setRole] = useState<UserRole | null>(null);
   const [currentUser, setCurrentUser] = useState<AnalystUser | null>(null); // Usuario logueado
@@ -275,6 +284,7 @@ const App: React.FC = () => {
     const item: QueueItem = { id: generateId(), action, payload, timestamp: new Date().toISOString() };
     queue.push(item);
     localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(queue));
+    setSyncQueueCount(queue.length);
     try {
       await fetch(cloudUrl, {
         method: 'POST', mode: 'no-cors',
@@ -282,7 +292,9 @@ const App: React.FC = () => {
         body: JSON.stringify({ action, ...payload })
       });
       const current = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
-      localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(current.filter(i => i.id !== item.id)));
+      const updated = current.filter(i => i.id !== item.id);
+      localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(updated));
+      setSyncQueueCount(updated.length);
     } catch {
       showToast("Sin conexión: el registro se enviará al cuaderno cuando se restablezca.", "alert");
     }
@@ -308,6 +320,7 @@ const App: React.FC = () => {
         } catch { /* sigue en cola para el próximo intento */ }
       }
       localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(remaining));
+      setSyncQueueCount(remaining.length);
       if (sent > 0) showToast(`${sent} registro(s) pendiente(s) sincronizado(s) con el cuaderno.`, "success");
     };
     retryQueue();
@@ -850,7 +863,14 @@ const App: React.FC = () => {
               {role === 'GERENTE' && (
                 <>
                   <Link to="/alertas" className="text-slate-600 hover:text-red-600 font-bold text-sm">Alertas</Link>
-                  <Link to="/nube" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Nube Dual</Link>
+                  <Link to="/nube" className="relative text-slate-600 hover:text-indigo-600 font-bold text-sm">
+                    Nube Dual
+                    {syncQueueCount > 0 && (
+                      <span className="absolute -top-2 -right-4 bg-amber-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
+                        {syncQueueCount > 9 ? '9+' : syncQueueCount}
+                      </span>
+                    )}
+                  </Link>
                   <Link to="/config" className="text-slate-400 hover:text-indigo-600"><Cog6ToothIcon className="w-6 h-6" /></Link>
                 </>
               )}
@@ -883,7 +903,7 @@ const App: React.FC = () => {
             <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} anthropicKey={anthropicKey} onUpdateAnthropicKey={updateAnthropicKey} /> : <Navigate to="/" />} />
           </Routes>
         </main>
-        <MobileNav role={role} reagents={reagents} onOpenExpiryModal={() => setShowExpiryModal(true)} />
+        <MobileNav role={role} reagents={reagents} onOpenExpiryModal={() => setShowExpiryModal(true)} syncQueueCount={syncQueueCount} />
         {deleteConfirmId && (() => {
           const reagent = reagents.find(r => r.id === deleteConfirmId);
           return (

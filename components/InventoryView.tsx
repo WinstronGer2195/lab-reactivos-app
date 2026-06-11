@@ -11,8 +11,8 @@ interface Props {
 }
 
 const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }) => {
-  const [search, setSearch] = useState('');
-  const [deptFilter, setDeptFilter] = useState<string>('all');
+  const [search, setSearch] = useState(() => sessionStorage.getItem('inv_search') || '');
+  const [deptFilter, setDeptFilter] = useState<string>(() => sessionStorage.getItem('inv_dept') || 'all');
 
   const groupedReagents = useMemo(() => {
     const groups: Record<string, {
@@ -87,7 +87,7 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }
               placeholder="Nombre o marca..."
               className="pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none w-full sm:w-64 transition-all text-sm"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); sessionStorage.setItem('inv_search', e.target.value); }}
             />
           </div>
           
@@ -96,7 +96,7 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }
             <select 
               className="pl-10 pr-8 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer w-full text-sm font-bold text-slate-700"
               value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
+              onChange={(e) => { setDeptFilter(e.target.value); sessionStorage.setItem('inv_dept', e.target.value); }}
             >
               <option value="all">Departamentos</option>
               <option value="Fisicoquímico">Fisicoquímico</option>

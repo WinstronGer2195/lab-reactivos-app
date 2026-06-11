@@ -1,11 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, Reagent, Department } from '../types';
 import { formatDateTime } from '../utils';
-import { 
-  ArrowDownCircleIcon, 
+import {
+  ArrowDownCircleIcon,
   ArrowUpCircleIcon,
   MagnifyingGlassIcon,
-  FunnelIcon
+  FunnelIcon,
+  AdjustmentsHorizontalIcon,
+  ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
 interface Props {
@@ -100,9 +102,21 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
                 <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4 text-xs text-slate-500">{formatDateTime(t.timestamp)}</td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded ${t.type === 'IN' ? 'text-emerald-600 bg-emerald-50' : t.type === 'OUT' ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50'}`}>
-                      {t.type === 'IN' ? <ArrowDownCircleIcon className="w-3 h-3" /> : t.type === 'OUT' ? <ArrowUpCircleIcon className="w-3 h-3" /> : <ArrowDownCircleIcon className="w-3 h-3" />} {t.type === 'IN' ? 'Entrada' : t.type === 'OUT' ? 'Salida' : 'Ajuste'}
-                    </span>
+                    {t.type === 'IN' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-emerald-600 bg-emerald-50">
+                        <ArrowDownCircleIcon className="w-3 h-3" /> Entrada
+                      </span>
+                    )}
+                    {t.type === 'OUT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-rose-600 bg-rose-50">
+                        <ArrowUpCircleIcon className="w-3 h-3" /> Salida
+                      </span>
+                    )}
+                    {t.type !== 'IN' && t.type !== 'OUT' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-amber-600 bg-amber-50">
+                        <AdjustmentsHorizontalIcon className="w-3 h-3" /> Ajuste
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 font-semibold text-slate-800 text-sm">{t.reagentName}</td>
                   <td className="px-6 py-4 text-xs font-medium text-slate-600">
@@ -130,8 +144,16 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
               ))}
               {filteredTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-slate-500">
-                    No se encontraron movimientos que coincidan con la búsqueda.
+                  <td colSpan={9} className="px-6 py-16 text-center">
+                    {transactions.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <ClipboardDocumentListIcon className="w-12 h-12 text-slate-200" />
+                        <p className="font-bold text-slate-500 text-sm">No hay movimientos registrados todavía.</p>
+                        <p className="text-xs text-slate-400">Los ingresos, salidas y ajustes del gerente aparecerán aquí.</p>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500 text-sm">No se encontraron movimientos que coincidan con la búsqueda.</p>
+                    )}
                   </td>
                 </tr>
               )}
