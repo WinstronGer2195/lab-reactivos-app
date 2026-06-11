@@ -31,6 +31,7 @@ const STORAGE_KEY_CLOUD_URL = 'reagentflow_cloud_url';
 const STORAGE_KEY_MG_PASSWORD = 'reagentflow_mg_pwd';
 const STORAGE_KEY_GEMINI     = 'reagentflow_gemini_key';
 const STORAGE_KEY_ANTHROPIC  = 'reagentflow_anthropic_key';
+const STORAGE_KEY_SYNC_QUEUE = 'reagentflow_sync_queue';
 
 // --- CONFIGURACIÓN EMAILJS (¡REEMPLAZA ESTOS VALORES!) ---
 const EMAILJS_PUBLIC_KEY = "aMH7yh-WaX5jjiRUm"; 
@@ -153,6 +154,8 @@ const App: React.FC = () => {
         if (geminiRow?.value) { setGeminiKey(geminiRow.value); localStorage.setItem(STORAGE_KEY_GEMINI, geminiRow.value); }
         const anthropicRow = configData.find(d => d.key === 'anthropic_api_key');
         if (anthropicRow?.value) { setAnthropicKey(anthropicRow.value); localStorage.setItem(STORAGE_KEY_ANTHROPIC, anthropicRow.value); }
+        const cloudUrlRow = configData.find(d => d.key === 'cloud_url');
+        if (cloudUrlRow?.value) { setCloudUrl(cloudUrlRow.value); localStorage.setItem(STORAGE_KEY_CLOUD_URL, cloudUrlRow.value); }
       }
 
       const { data: reagentsData } = await supabase.from('reagents').select('*');
@@ -212,6 +215,53 @@ const App: React.FC = () => {
     const id = setInterval(ping, 4 * 60 * 60 * 1000); // cada 4 horas mientras la app esté abierta
     return () => clearInterval(id);
   }, [supabase]);
+
+  // --- Sincronización cuaderno electrónico con cola persistente ---
+  const syncToSheets = useCallback(async (action: string, payload: object) => {
+    if (!cloudUrl) return;
+    type QueueItem = { id: string; action: string; payload: object; timestamp: string };
+    const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
+    const item: QueueItem = { id: generateId(), action, payload, timestamp: new Date().toISOString() };
+    queue.push(item);
+    localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(queue));
+    try {
+      await fetch(cloudUrl, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...payload })
+      });
+      const current = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
+      localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(current.filter(i => i.id !== item.id)));
+    } catch {
+      showToast("Sin conexión: el registro se enviará al cuaderno cuando se restablezca.", "alert");
+    }
+  }, [cloudUrl]);
+
+  // Reintento automático de registros pendientes al recuperar cloudUrl o al iniciar
+  useEffect(() => {
+    if (!cloudUrl) return;
+    type QueueItem = { id: string; action: string; payload: object };
+    const retryQueue = async () => {
+      const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
+      if (queue.length === 0) return;
+      let sent = 0;
+      const remaining = [...queue];
+      for (const item of queue) {
+        try {
+          await fetch(cloudUrl, {
+            method: 'POST', mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: item.action, ...item.payload })
+          });
+          const idx = remaining.findIndex(i => i.id === item.id);
+          if (idx > -1) { remaining.splice(idx, 1); sent++; }
+        } catch { /* sigue en cola para el próximo intento */ }
+      }
+      localStorage.setItem(STORAGE_KEY_SYNC_QUEUE, JSON.stringify(remaining));
+      if (sent > 0) showToast(`${sent} registro(s) pendiente(s) sincronizado(s) con el cuaderno.`, "success");
+    };
+    retryQueue();
+  }, [cloudUrl]);
 
   // --- Persistencia de configuración ---
   const saveConfigKey = async (key: string, value: string) => {
@@ -512,24 +562,26 @@ const App: React.FC = () => {
       }
     }
 
-    setReagents(updatedReagents);
     const newTransaction: Transaction = { ...transactionData, id: generateId(), reagentId: reagentId!, reagentName: finalReagent.name, timestamp };
-    setTransactions([newTransaction, ...transactions]);
-    showToast(`${transactionData.type === 'IN' ? 'Ingreso' : 'Salida'} registrada`);
 
+    // 1. GUARDAR EN SUPABASE PRIMERO — la UI no se actualiza hasta confirmar en DB
     if (supabase) {
+      setIsSyncing(true);
+
       const { error: rError } = await supabase.from('reagents').upsert({
         id: finalReagent.id, name: finalReagent.name, brand: finalReagent.brand, presentation: finalReagent.presentation,
         current_stock: finalReagent.currentStock, min_stock: finalReagent.minStock, department: finalReagent.department,
         base_unit: finalReagent.baseUnit, container_type: finalReagent.containerType, quantity_per_container: finalReagent.quantityPerContainer,
         expiry_date: finalReagent.expiryDate, lot: finalReagent.lot || null, is_ordered: finalReagent.isOrdered, last_updated: finalReagent.lastUpdated,
-        is_deleted: false // Aseguramos que esté activo al hacer movimientos
+        is_deleted: false
       });
+
       if (rError) {
-        console.error("Error upserting reagent:", rError);
-        if (rError.message.includes('lot')) {
-            showToast("Falta la columna 'lot' en Supabase (reagents)", "error");
-        }
+        setIsSyncing(false);
+        showToast(rError.message.includes('lot')
+          ? "Falta la columna 'lot' en Supabase (reagents)"
+          : "Error al guardar en la nube. La transacción NO fue registrada.", "error");
+        return;
       }
 
       const { error: txError } = await supabase.from('transactions').insert({
@@ -539,40 +591,73 @@ const App: React.FC = () => {
         lot: newTransaction.lot || null,
         verification_status: newTransaction.verificationStatus || null
       });
-      
+
       if (txError) {
-        console.error("Error inserting transaction:", txError);
-        if (txError.message.includes('verification_status')) {
-            showToast("Falta la columna 'verification_status' en Supabase", "error");
-        } else if (txError.message.includes('lot')) {
-            showToast("Falta la columna 'lot' en Supabase (transactions)", "error");
-        } else {
-            showToast("Error al guardar transacción en la nube", "error");
-        }
+        setIsSyncing(false);
+        showToast(txError.message.includes('verification_status')
+          ? "Falta la columna 'verification_status' en Supabase"
+          : txError.message.includes('lot')
+            ? "Falta la columna 'lot' en Supabase (transactions)"
+            : "Error al registrar la transacción. Revisa el inventario.", "error");
+        pullData();
+        return;
       }
+
+      setIsSyncing(false);
     }
 
-    // --- SINCRONIZACIÓN CUADERNO ELECTRÓNICO (DUAL REQUEST) ---
-    if (cloudUrl) {
-      try {
-        fetch(cloudUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'LOG_TRANSACTION', transaction: newTransaction })
-        });
-        
-        setTimeout(() => {
-          fetch(cloudUrl, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents: updatedReagents })
-          });
-        }, 1000);
-        
-      } catch (e) { console.error("Cloud sync failed"); }
+    // 2. Actualizar UI — solo llega aquí si DB confirmó (o si no hay Supabase configurado)
+    setReagents(updatedReagents);
+    setTransactions([newTransaction, ...transactions]);
+    showToast(`${transactionData.type === 'IN' ? 'Ingreso' : 'Salida'} registrada`);
+
+    // 3. Sincronizar cuaderno electrónico (con cola persistente y reintentos automáticos)
+    syncToSheets('LOG_TRANSACTION', { transaction: newTransaction });
+    setTimeout(() => syncToSheets('SYNC_INVENTORY_SNAPSHOT', { reagents: updatedReagents }), 1000);
+  };
+
+  const handleRecoverHistory = async (): Promise<number> => {
+    if (!supabase) throw new Error("No hay conexión a Supabase configurada");
+    if (!cloudUrl) throw new Error("No hay URL del cuaderno electrónico configurada");
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('timestamp', { ascending: true });
+
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return 0;
+
+    for (const t of data) {
+      const transaction = {
+        id: t.id,
+        reagentId: t.reagent_id,
+        reagentName: t.reagent_name,
+        type: t.type,
+        quantity: parseFloat(t.quantity),
+        displayQuantity: parseFloat(t.display_quantity),
+        displayUnit: t.display_unit,
+        analyst: t.analyst,
+        timestamp: t.timestamp,
+        lot: t.lot || '',
+        verificationStatus: t.verification_status
+      };
+      await fetch(cloudUrl, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'LOG_TRANSACTION', transaction })
+      });
+      // Pausa entre requests para no saturar Apps Script
+      await new Promise(res => setTimeout(res, 300));
     }
+
+    await fetch(cloudUrl, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents })
+    });
+
+    return data.length;
   };
 
   const MobileNav = () => {
@@ -763,7 +848,7 @@ const App: React.FC = () => {
             <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
-            <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); }} showToast={showToast} onSync={pullData} /> : <Navigate to="/" />} />
+            <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); saveConfigKey('cloud_url', url); }} showToast={showToast} onSync={pullData} onRecoverHistory={handleRecoverHistory} /> : <Navigate to="/" />} />
             <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} anthropicKey={anthropicKey} onUpdateAnthropicKey={updateAnthropicKey} /> : <Navigate to="/" />} />
           </Routes>
         </main>

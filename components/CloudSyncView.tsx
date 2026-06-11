@@ -24,6 +24,7 @@ interface Props {
   setCloudUrl: (url: string) => void;
   showToast: (msg: string, type: any) => void;
   onSync: () => void;
+  onRecoverHistory: () => Promise<number>;
 }
 
 const SQL_SCHEMA = `-- EJECUTAR EN SQL EDITOR DE SUPABASE
@@ -124,7 +125,27 @@ function doPost(e) {
       ]);
     }
     
-    // --- MÓDULO 3: RESPALDO DE CONFIGURACIÓN ---
+    // --- MÓDULO 3: RECUPERACIÓN MASIVA DE HISTORIAL (desde Supabase) ---
+    if (action === "BULK_LOG_TRANSACTIONS" && data.transactions && data.transactions.length > 0) {
+      var sheetName = "Auditoría (Historial)";
+      var sheet = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName);
+      sheet.clear();
+      var headers = [["FECHA/HORA", "ID TRANSACCIÓN", "TIPO MOVIMIENTO", "REACTIVO", "LOTE", "CANTIDAD", "UNIDAD", "ANALISTA RESPONSABLE", "VERIFICACIÓN"]];
+      sheet.getRange(1, 1, 1, headers[0].length).setValues(headers).setFontWeight("bold").setBackground("#fef3c7");
+      sheet.setFrozenRows(1);
+      var rows = data.transactions.map(function(t) {
+        return [
+          t.timestamp, t.id,
+          t.type === 'IN' ? "INGRESO" : (t.type === 'OUT' ? "SALIDA" : "AJUSTE"),
+          t.reagentName, t.lot || "N/A", t.displayQuantity, t.displayUnit,
+          t.analyst, t.verificationStatus || "N/A"
+        ];
+      });
+      sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+      sheet.autoResizeColumns(1, 9);
+    }
+
+    // --- MÓDULO 4: RESPALDO DE CONFIGURACIÓN ---
     if (action === "SAVE_CONFIG") {
       var sheet = ss.getSheetByName('Config_Backup') || ss.insertSheet('Config_Backup');
       sheet.clear();
@@ -142,13 +163,14 @@ function doPost(e) {
   }
 }`;
 
-const CloudSyncView: React.FC<Props> = ({ 
-  supaUrl, setSupaUrl, supaKey, setSupaKey, cloudUrl, setCloudUrl, showToast, onSync 
+const CloudSyncView: React.FC<Props> = ({
+  supaUrl, setSupaUrl, supaKey, setSupaKey, cloudUrl, setCloudUrl, showToast, onSync, onRecoverHistory
 }) => {
   const [urlSInput, setUrlSInput] = useState(supaUrl);
   const [keySInput, setKeySInput] = useState(supaKey);
   const [urlEInput, setUrlEInput] = useState(cloudUrl);
   const [copied, setCopied] = useState<'SQL' | 'EXCEL' | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   const handleSaveSupa = (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,6 +255,40 @@ const CloudSyncView: React.FC<Props> = ({
                 <input type="url" placeholder="https://script.google.com/..." className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-emerald-500 outline-none text-xs font-mono" value={urlEInput} onChange={e => setUrlEInput(e.target.value)} />
                 <button type="submit" className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all text-xs uppercase tracking-widest">Vincular Excel</button>
               </form>
+
+              {cloudUrl && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <ArrowPathIcon className="w-5 h-5 text-amber-600" />
+                    <p className="text-xs font-black text-amber-800 uppercase tracking-widest">Recuperar historial completo</p>
+                  </div>
+                  <p className="text-xs text-amber-700 leading-relaxed">
+                    Envía <span className="font-bold">todos los movimientos</span> de Supabase al cuaderno, desde el más antiguo al más reciente.
+                    <br/><span className="font-bold text-amber-900">⚠ Antes de continuar:</span> abrí el Google Sheets, pestaña "Auditoría (Historial)", seleccioná todas las filas de datos (menos el encabezado) y borrálas para evitar duplicados.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      setRecovering(true);
+                      try {
+                        const total = await onRecoverHistory();
+                        showToast(`${total} movimientos enviados al cuaderno electrónico.`, "success");
+                      } catch (e: any) {
+                        showToast(e.message || "Error al recuperar historial", "error");
+                      } finally {
+                        setRecovering(false);
+                      }
+                    }}
+                    disabled={recovering}
+                    className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-black py-3 rounded-xl transition-all text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                  >
+                    {recovering ? (
+                      <><ArrowPathIcon className="w-4 h-4 animate-spin" /> Enviando al cuaderno...</>
+                    ) : (
+                      <><ArrowPathIcon className="w-4 h-4" /> Recuperar historial desde Supabase</>
+                    )}
+                  </button>
+                </div>
+              )}
               <div className="space-y-4 pt-4 border-t border-slate-100">
                 <div className="flex justify-between items-center">
                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Script Avanzado V2</p>
