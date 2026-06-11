@@ -6,7 +6,7 @@ import {
   BeakerIcon, QueueListIcon, BellAlertIcon, PlusCircleIcon, MinusCircleIcon,
   ArrowRightOnRectangleIcon, HomeIcon, ChevronRightIcon, LockClosedIcon,
   Cog6ToothIcon, ClockIcon, CloudIcon, ArrowPathIcon, WifiIcon, ExclamationTriangleIcon, UserIcon,
-  CalendarDaysIcon
+  CalendarDaysIcon, ArchiveBoxXMarkIcon
 } from '@heroicons/react/24/outline';
 
 import { Reagent, Transaction, UserRole, AnalystUser } from './types';
@@ -21,9 +21,7 @@ import EditReagentModal from './components/EditReagentModal';
 import ExpiryModal from './components/ExpiryModal';
 import { generateId, formatQuantity, normalizeToUnit } from './utils';
 
-// --- CONFIGURACIÓN PREDETERMINADA (HARDCODED) ---
-const DEFAULT_SUPABASE_URL = "https://diohrpjhwnbwjomntpjk.supabase.co"; 
-const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRpb2hycGpod25id2pvbW50cGprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwNzU5NTMsImV4cCI6MjA4NTY1MTk1M30.ZRBxweKA21PfSidL4UPScGU0llCtxTF9ugr4v_VQ3qg"; 
+// Credenciales en .env.local (VITE_SUPABASE_URL / VITE_SUPABASE_KEY) o en localStorage via Nube Dual
 
 const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
@@ -51,6 +49,56 @@ let globalSupabaseClient: SupabaseClient | null = null;
 let globalSupaUrl = '';
 let globalSupaKey = '';
 
+interface QueueItem {
+  id: string;
+  action: string;
+  payload: object;
+  timestamp: string;
+}
+
+interface MobileNavProps {
+  role: UserRole | null;
+  reagents: Reagent[];
+  onOpenExpiryModal: () => void;
+}
+
+const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal }) => {
+  const location = useLocation();
+  const navItems = role === 'GERENTE'
+    ? [
+        { path: '/', icon: HomeIcon, label: 'Inicio' },
+        { path: '/ingreso', icon: PlusCircleIcon, label: 'Entra' },
+        { path: '/salida', icon: MinusCircleIcon, label: 'Sale' },
+        { path: '/nube', icon: CloudIcon, label: 'Nube' },
+        { path: '/config', icon: Cog6ToothIcon, label: 'Config' },
+      ]
+    : [
+        { path: '/', icon: HomeIcon, label: 'Inicio' },
+        { path: '/ingreso', icon: PlusCircleIcon, label: 'Entra' },
+        { path: '/salida', icon: MinusCircleIcon, label: 'Sale' },
+        { path: '/historial', icon: ClockIcon, label: 'Histo' },
+      ];
+  const urgentCount = reagents.filter(r => {
+    if (!r.expiryDate || r.expiryDate === 'N/A') return false;
+    return Math.ceil((new Date(r.expiryDate).getTime() - Date.now()) / 86400000) <= 30;
+  }).length;
+  return (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50">
+      {navItems.map(item => (
+        <Link key={item.path} to={item.path} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
+          <item.icon className="w-6 h-6" />
+          <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{item.label}</span>
+        </Link>
+      ))}
+      <button onClick={onOpenExpiryModal} className="relative flex flex-col items-center justify-center w-full h-full transition-colors text-slate-400 hover:text-indigo-600">
+        <CalendarDaysIcon className="w-6 h-6" />
+        {urgentCount > 0 && <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{urgentCount}</span>}
+        <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">Vence</span>
+      </button>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const getEnv = (key: string) => {
     // @ts-ignore
@@ -62,10 +110,10 @@ const App: React.FC = () => {
 
   // --- Inicialización de Estado ---
   const [supaUrl, setSupaUrl] = useState<string>(
-    localStorage.getItem(STORAGE_KEY_SUPA_URL) || DEFAULT_SUPABASE_URL || VITE_URL || ''
+    localStorage.getItem(STORAGE_KEY_SUPA_URL) || VITE_URL || ''
   );
   const [supaKey, setSupaKey] = useState<string>(
-    localStorage.getItem(STORAGE_KEY_SUPA_KEY) || DEFAULT_SUPABASE_KEY || VITE_KEY || ''
+    localStorage.getItem(STORAGE_KEY_SUPA_KEY) || VITE_KEY || ''
   );
   const [cloudUrl, setCloudUrl] = useState<string>(
     localStorage.getItem(STORAGE_KEY_CLOUD_URL) || ''
@@ -89,6 +137,7 @@ const App: React.FC = () => {
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [showAnalystSelection, setShowAnalystSelection] = useState(false); // Modal para seleccionar analista
   const [editingReagentId, setEditingReagentId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'alert' | 'error' } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -195,6 +244,7 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error("Critical Sync Error:", e);
+      showToast("Error al sincronizar con Supabase. Verificá la conexión.", "error");
     } finally {
       setIsSyncing(false);
     }
@@ -219,7 +269,6 @@ const App: React.FC = () => {
   // --- Sincronización cuaderno electrónico con cola persistente ---
   const syncToSheets = useCallback(async (action: string, payload: object) => {
     if (!cloudUrl) return;
-    type QueueItem = { id: string; action: string; payload: object; timestamp: string };
     const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
     const item: QueueItem = { id: generateId(), action, payload, timestamp: new Date().toISOString() };
     queue.push(item);
@@ -240,7 +289,6 @@ const App: React.FC = () => {
   // Reintento automático de registros pendientes al recuperar cloudUrl o al iniciar
   useEffect(() => {
     if (!cloudUrl) return;
-    type QueueItem = { id: string; action: string; payload: object };
     const retryQueue = async () => {
       const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_SYNC_QUEUE) || '[]') as QueueItem[];
       if (queue.length === 0) return;
@@ -344,71 +392,61 @@ const App: React.FC = () => {
   };
 
   // --- Manejo de pedidos (Mark as Ordered) ---
-  const handleMarkAsOrdered = async (id: string) => {
+  const handleMarkAsOrdered = async (ids: string[]) => {
     const timestamp = new Date().toISOString();
-    const targetReagent = reagents.find(r => r.id === id);
-    
-    const updatedReagents = reagents.map(r => 
-      r.id === id ? { ...r, isOrdered: true, lastUpdated: timestamp } : r
+    const updatedReagents = reagents.map(r =>
+      ids.includes(r.id) ? { ...r, isOrdered: true, lastUpdated: timestamp } : r
     );
     setReagents(updatedReagents);
     showToast("Orden de compra registrada", "success");
 
-    if (supabase && targetReagent) {
-      await supabase.from('reagents').upsert({
-        id: targetReagent.id, name: targetReagent.name, brand: targetReagent.brand, presentation: targetReagent.presentation,
-        current_stock: targetReagent.currentStock, min_stock: targetReagent.minStock, department: targetReagent.department,
-        base_unit: targetReagent.baseUnit, container_type: targetReagent.containerType, quantity_per_container: targetReagent.quantityPerContainer,
-        expiry_date: targetReagent.expiryDate, is_ordered: true, last_updated: timestamp
-      });
+    if (supabase) {
+      try {
+        for (const id of ids) {
+          const { error } = await supabase.from('reagents').update({ is_ordered: true, last_updated: timestamp }).eq('id', id);
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.error("Error marcando como pedido:", error);
+        showToast("Error al guardar en la nube. Recargando...", "error");
+        pullData();
+      }
     }
   };
 
   // --- ELIMINACIÓN DE REACTIVOS (SOFT DELETE) ---
-  const handleDeleteReagent = async (id: string) => {
+  const handleDeleteReagent = (id: string) => {
     if (role !== 'GERENTE') return;
-    
     const reagent = reagents.find(r => r.id === id);
     if (!reagent) return;
-
-    // Usar tolerancia numérica para float (ej: 0.000000001 se considera 0)
     if (reagent.currentStock > 0.01) {
       showToast("No se puede eliminar: Tiene stock", "error");
       return;
     }
+    setDeleteConfirmId(id);
+  };
 
-    if (!window.confirm(`¿Archivar definitivamente "${reagent.name} - ${reagent.brand}"?\n\nEl reactivo desaparecerá del inventario y formularios, pero su historial de movimientos se conservará.`)) return;
-
-    // 1. Actualización Optimista de UI (Lo quitamos de la lista visible)
+  const confirmDeleteReagent = async (id: string) => {
+    setDeleteConfirmId(null);
     const updatedReagents = reagents.filter(r => r.id !== id);
     setReagents(updatedReagents);
     showToast("Reactivo archivado", "success");
 
-    // 2. Operaciones en Base de Datos (SOFT DELETE)
     if (supabase) {
       try {
-        // En lugar de DELETE, hacemos UPDATE setting is_deleted = true
-        // Esto mantiene la integridad referencial de los movimientos (Foreign Key)
-        const { error: reagentError } = await supabase
-            .from('reagents')
-            .update({ is_deleted: true })
-            .eq('id', id);
-
-        if (reagentError) throw reagentError;
-
+        const { error } = await supabase.from('reagents').update({ is_deleted: true }).eq('id', id);
+        if (error) throw error;
       } catch (error) {
         console.error("Error archivando reactivo:", error);
         showToast("Error al archivar en nube (¿Falta columna is_deleted?)", "error");
-        pullData(); // Revertir cambios si falló la DB
+        pullData();
       }
     }
 
-    // 3. Sincronizar Excel (Snapshot) - Enviamos la lista actualizada SIN el eliminado
     if (cloudUrl) {
       try {
         await fetch(cloudUrl, {
-          method: 'POST',
-          mode: 'no-cors',
+          method: 'POST', mode: 'no-cors',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'SYNC_INVENTORY_SNAPSHOT', reagents: updatedReagents })
         });
@@ -427,7 +465,6 @@ const App: React.FC = () => {
     // Actualización optimista
     const updatedReagents = reagents.map(r => r.id === updatedReagent.id ? { ...updatedReagent, lastUpdated: timestamp } : r);
     setReagents(updatedReagents);
-    setEditingReagentId(null);
     showToast("Reactivo actualizado", "success");
 
     // Registrar transacción de ajuste
@@ -464,11 +501,14 @@ const App: React.FC = () => {
           lot: newTransaction.lot || null, verification_status: newTransaction.verificationStatus || null
         });
         if (txError) throw txError;
+        setEditingReagentId(null);
       } catch (error) {
         console.error("Error editando reactivo:", error);
         showToast("Error al guardar cambios en la nube", "error");
-        pullData(); // Revertir si falla
+        pullData();
       }
+    } else {
+      setEditingReagentId(null);
     }
   };
 
@@ -660,36 +700,6 @@ const App: React.FC = () => {
     return data.length;
   };
 
-  const MobileNav = () => {
-    const location = useLocation();
-    const navItems = [
-      { path: '/', icon: HomeIcon, label: 'Inicio' },
-      { path: '/ingreso', icon: PlusCircleIcon, label: 'Entra' },
-      { path: '/salida', icon: MinusCircleIcon, label: 'Sale' },
-      { path: '/historial', icon: ClockIcon, label: 'Histo' },
-      ...(role === 'GERENTE' ? [{ path: '/alertas', icon: BellAlertIcon, label: 'Alertas' }] : [])
-    ];
-    const urgentCount = reagents.filter(r => {
-      if (!r.expiryDate || r.expiryDate === 'N/A') return false;
-      return Math.ceil((new Date(r.expiryDate).getTime() - Date.now()) / 86400000) <= 30;
-    }).length;
-    return (
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50">
-        {navItems.map(item => (
-          <Link key={item.path} to={item.path} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
-            <item.icon className="w-6 h-6" />
-            <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{item.label}</span>
-          </Link>
-        ))}
-        <button onClick={() => setShowExpiryModal(true)} className="relative flex flex-col items-center justify-center w-full h-full transition-colors text-slate-400 hover:text-indigo-600">
-          <CalendarDaysIcon className="w-6 h-6" />
-          {urgentCount > 0 && <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{urgentCount}</span>}
-          <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">Vence</span>
-        </button>
-      </div>
-    );
-  };
-
   if (!role) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-4 text-center">
@@ -852,7 +862,28 @@ const App: React.FC = () => {
             <Route path="/config" element={role === 'GERENTE' ? <ConfigView updateMgSettings={updateMgSettings} analysts={analysts} onAddAnalyst={addAnalyst} onRemoveAnalyst={removeAnalyst} currentMg={mgPassword} currentEmail={managerEmail} geminiKey={geminiKey} onUpdateGeminiKey={updateGeminiKey} anthropicKey={anthropicKey} onUpdateAnthropicKey={updateAnthropicKey} /> : <Navigate to="/" />} />
           </Routes>
         </main>
-        <MobileNav />
+        <MobileNav role={role} reagents={reagents} onOpenExpiryModal={() => setShowExpiryModal(true)} />
+        {deleteConfirmId && (() => {
+          const reagent = reagents.find(r => r.id === deleteConfirmId);
+          return (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="bg-red-50 p-6 border-b border-red-100 flex items-center gap-3">
+                  <div className="p-2 bg-red-100 rounded-lg"><ArchiveBoxXMarkIcon className="w-6 h-6 text-red-600" /></div>
+                  <div><h3 className="font-bold text-slate-800">¿Archivar reactivo?</h3><p className="text-xs text-slate-500">Esta acción no se puede deshacer</p></div>
+                </div>
+                <div className="p-6 space-y-2">
+                  <p className="font-bold text-slate-800">{reagent?.name} — {reagent?.brand}</p>
+                  <p className="text-sm text-slate-500">El reactivo desaparecerá del inventario y formularios. El historial de movimientos se conservará en la base de datos.</p>
+                </div>
+                <div className="p-4 flex gap-3 border-t border-slate-100">
+                  <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                  <button onClick={() => confirmDeleteReagent(deleteConfirmId)} className="flex-[2] bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-lg transition-colors">Archivar definitivamente</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {editingReagentId && (
           <EditReagentModal
             reagent={reagents.find(r => r.id === editingReagentId)!}

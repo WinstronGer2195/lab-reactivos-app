@@ -21,6 +21,7 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
   const [newAnalystName, setNewAnalystName] = useState('');
   const [newAnalystDept, setNewAnalystDept] = useState<Department>('Fisicoquímico');
   const [success, setSuccess] = useState('');
+  const [analystError, setAnalystError] = useState('');
   const [geminiInput, setGeminiInput] = useState('');
   const [anthropicInput, setAnthropicInput] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -53,9 +54,10 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
 
   const handleAddAnalyst = (e: React.FormEvent) => {
     e.preventDefault();
+    setAnalystError('');
     if (newAnalystName.trim()) {
       if (analysts.some(a => a.name.toLowerCase() === newAnalystName.trim().toLowerCase())) {
-        alert("Este nombre ya existe.");
+        setAnalystError('Este nombre ya existe en la lista.');
         return;
       }
       onAddAnalyst({ name: newAnalystName.trim(), department: newAnalystDept });
@@ -208,8 +210,9 @@ const ConfigView: React.FC<Props> = ({ updateMgSettings, analysts, onAddAnalyst,
                 required
                 className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none transition-all"
                 value={newAnalystName}
-                onChange={(e) => setNewAnalystName(e.target.value)}
+                onChange={(e) => { setNewAnalystName(e.target.value); setAnalystError(''); }}
               />
+              {analystError && <p className="text-xs font-bold text-red-600 pl-1">{analystError}</p>}
               <div className="flex gap-2">
                 <select
                   className="flex-grow px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:border-indigo-500 outline-none font-bold text-slate-600"

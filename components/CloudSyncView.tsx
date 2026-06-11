@@ -34,14 +34,15 @@ CREATE TABLE IF NOT EXISTS public.reagents (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, brand TEXT NOT NULL, presentation TEXT NOT NULL,
     current_stock NUMERIC NOT NULL, min_stock NUMERIC NOT NULL, department TEXT NOT NULL,
     base_unit TEXT NOT NULL, container_type TEXT NOT NULL, quantity_per_container NUMERIC NOT NULL,
-    expiry_date TEXT NOT NULL, is_ordered BOOLEAN DEFAULT FALSE, last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expiry_date TEXT NOT NULL, lot TEXT, is_ordered BOOLEAN DEFAULT FALSE, last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     is_deleted BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS public.transactions (
     id TEXT PRIMARY KEY, reagent_id TEXT REFERENCES public.reagents(id), reagent_name TEXT NOT NULL,
     type TEXT NOT NULL, quantity NUMERIC NOT NULL, display_quantity NUMERIC NOT NULL,
-    display_unit TEXT NOT NULL, analyst TEXT NOT NULL, timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    display_unit TEXT NOT NULL, analyst TEXT NOT NULL, timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    lot TEXT, verification_status TEXT
 );
 
 -- Habilitar acceso público rápido

@@ -12,7 +12,7 @@ import {
 
 interface Props {
   reagents: Reagent[];
-  markAsOrdered: (id: string) => void;
+  markAsOrdered: (ids: string[]) => void;
   onUpdateMinStock: (id: string, newMin: number) => void;
   notifications: any[];
 }
@@ -119,7 +119,7 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
                   </div>
 
                   <button 
-                    onClick={() => group.brands.length > 0 && markAsOrdered(group.brands[0].id)}
+                    onClick={() => markAsOrdered(group.brands.map(b => b.id))}
                     className="w-full flex items-center justify-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-indigo-100 active:scale-95"
                   >
                     <ShoppingBagIcon className="w-5 h-5" />

@@ -31,6 +31,8 @@ const BASE_UNITS_PKG = ['unidades', 'Rx'];
 
 const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole, supabase }) => {
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{ name: string; brand: string; stock: number; unit: string } | null>(null);
   const [isExisting, setIsExisting] = useState(false);
   const [isNewBrandForExisting, setIsNewBrandForExisting] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
@@ -255,53 +257,15 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
       }
     } catch (error: any) {
       console.error(error);
-      alert(error.message || "Error analizando la etiqueta. Por favor intente de nuevo o ingrese manualmente.");
+      setFormError(error.message || "Error al analizar la etiqueta. Intentá seleccionar manualmente.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.analystName) {
-      alert("Error de sesión: No hay analista asignado.");
-      return;
-    }
-
-    // --- VALIDACIÓN DE DUPLICADOS (Solo para nuevos reactivos) ---
-    if (!isExisting) {
-      const normalizedName = formData.name.trim().toUpperCase();
-      const normalizedBrand = formData.brand.trim().toUpperCase();
-
-      const possibleDuplicate = reagents.find(r => {
-        const rName = r.name.toUpperCase();
-        const rBrand = r.brand.toUpperCase();
-        
-        // Coincidencia estricta de marca (porque es desplegable o tipificado con cuidado)
-        // Y coincidencia parcial de nombre (uno contiene al otro)
-        const brandMatch = rBrand === normalizedBrand;
-        const nameOverlap = rName.includes(normalizedName) || normalizedName.includes(rName);
-
-        return brandMatch && nameOverlap;
-      });
-
-      if (possibleDuplicate) {
-        const confirmCreate = window.confirm(
-          `⚠️ ¡POSIBLE DUPLICADO DETECTADO!\n\n` +
-          `Ya existe un reactivo similar en el inventario:\n` +
-          `Nombre: ${possibleDuplicate.name}\n` +
-          `Marca: ${possibleDuplicate.brand}\n` +
-          `Stock actual: ${possibleDuplicate.currentStock} ${possibleDuplicate.baseUnit}\n\n` +
-          `Está intentando crear: "${normalizedName}" (${normalizedBrand}).\n\n` +
-          `¿Está SEGURO de que desea crear uno nuevo en lugar de usar el existente?`
-        );
-        if (!confirmCreate) {
-          return; // Cancelar el submit
-        }
-      }
-    }
-    // -----------------------------------------------------------
-    
+  const doSubmit = () => {
+    setDuplicateWarning(null);
+    setFormError(null);
     const finalReagentId = (isExisting) ? selectedReagentId : undefined;
 
     let finalQuantityPerContainer = formData.quantityPerContainer;
@@ -365,8 +329,34 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setDuplicateWarning(null);
+
+    if (!formData.analystName) {
+      setFormError("Error de sesión: No hay analista asignado.");
+      return;
+    }
+
+    if (!isExisting) {
+      const normalizedName = formData.name.trim().toUpperCase();
+      const normalizedBrand = formData.brand.trim().toUpperCase();
+      const possibleDuplicate = reagents.find(r => {
+        const brandMatch = r.brand.toUpperCase() === normalizedBrand;
+        const nameOverlap = r.name.toUpperCase().includes(normalizedName) || normalizedName.includes(r.name.toUpperCase());
+        return brandMatch && nameOverlap;
+      });
+      if (possibleDuplicate) {
+        setDuplicateWarning({ name: possibleDuplicate.name, brand: possibleDuplicate.brand, stock: possibleDuplicate.currentStock, unit: possibleDuplicate.baseUnit });
+        return;
+      }
+    }
+
+    doSubmit();
+  };
+
   // Lógica para saber si el campo departamento es editable
-  // Es editable SI: NO es un reactivo existente Y el usuario es GERENTE
   const canEditDepartment = !isExisting && !isNewBrandForExisting && userRole === 'GERENTE';
 
   return (
@@ -703,6 +693,32 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
                 </div>
               )}
             </div>
+
+            {formError && (
+              <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-2">
+                <ExclamationTriangleIcon className="w-5 h-5 text-red-500 shrink-0" />
+                <p className="text-sm font-bold text-red-700">{formError}</p>
+              </div>
+            )}
+
+            {duplicateWarning && (
+              <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-800 text-sm">¡Posible duplicado detectado!</p>
+                    <p className="text-xs text-amber-700 mt-1">
+                      Ya existe <span className="font-bold">{duplicateWarning.name} — {duplicateWarning.brand}</span> con {duplicateWarning.stock} {duplicateWarning.unit} en stock.
+                    </p>
+                    <p className="text-xs text-amber-600 mt-1">¿Querés crear una entrada adicional de todas formas?</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setDuplicateWarning(null)} className="flex-1 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
+                  <button type="button" onClick={doSubmit} className="flex-[2] py-2 text-sm font-bold text-white bg-amber-600 rounded-xl hover:bg-amber-700 transition-colors">Crear de todas formas</button>
+                </div>
+              </div>
+            )}
 
             <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-5 rounded-2xl shadow-xl transition-all active:scale-[0.98] uppercase tracking-widest">
               Confirmar Ingreso

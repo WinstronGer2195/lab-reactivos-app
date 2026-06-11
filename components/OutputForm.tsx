@@ -29,6 +29,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     analystName: currentUser?.name || (userRole === 'GERENTE' ? 'GERENTE' : ''),
   });
 
+  const [formError, setFormError] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -146,23 +147,28 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       }
 
       if (found) setSelectedReagentId(found.id);
-      else alert("Reactivo no encontrado en stock o sin existencias.");
-    } catch (error: any) { 
-      alert(error.message || "Error al analizar o reactivo no identificado."); 
-    } finally { 
+      else setFormError("Reactivo no encontrado en inventario o sin existencias.");
+    } catch (error: any) {
+      setFormError(error.message || "Error al analizar la imagen. Intentá seleccionar manualmente.");
+    } finally {
       setLoading(false); 
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!selectedReagent) return;
     if (!formData.analystName) {
-      alert("Error de sesión: Analista no identificado.");
+      setFormError("Error de sesión: analista no identificado.");
+      return;
+    }
+    if (totalAmountToWithdraw <= 0) {
+      setFormError("La cantidad a retirar debe ser mayor a cero.");
       return;
     }
     if (totalAmountToWithdraw > selectedReagent.currentStock) {
-      alert("No hay suficiente stock.");
+      setFormError(`Stock insuficiente. Disponible: ${selectedReagent.currentStock} ${selectedReagent.baseUnit}.`);
       return;
     }
 
@@ -317,6 +323,13 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
 
               {totalStockForSelectedName - totalAmountToWithdraw <= selectedReagent.minStock && (
                 <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 flex gap-3 animate-pulse"><ExclamationTriangleIcon className="w-6 h-6 text-amber-500 shrink-0" /><p className="text-[11px] text-amber-700 font-bold uppercase leading-tight">Aviso: El stock total (todas las marcas) quedará en nivel crítico tras esta operación.</p></div>
+              )}
+
+              {formError && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-2">
+                  <ExclamationTriangleIcon className="w-5 h-5 text-red-500 shrink-0" />
+                  <p className="text-sm font-bold text-red-700">{formError}</p>
+                </div>
               )}
 
               <button type="submit" className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-5 rounded-2xl shadow-xl transition-all active:scale-[0.98] uppercase tracking-widest">Registrar Salida</button>

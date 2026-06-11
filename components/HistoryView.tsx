@@ -134,6 +134,9 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
           </table>
         </div>
       </div>
+      <p className="text-center text-xs text-slate-400 py-3">
+        Mostrando los últimos 100 movimientos. Para el historial completo usá la recuperación desde Nube Dual.
+      </p>
     </div>
   );
 };

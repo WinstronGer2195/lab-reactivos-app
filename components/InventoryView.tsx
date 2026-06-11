@@ -119,6 +119,18 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
+              {groupedReagents.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-16 text-center">
+                    <BeakerIcon className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+                    <p className="font-bold text-slate-500 text-sm">
+                      {search || deptFilter !== 'all'
+                        ? 'Ningún reactivo coincide con el filtro aplicado.'
+                        : 'El inventario está vacío. Registrá el primer ingreso.'}
+                    </p>
+                  </td>
+                </tr>
+              )}
               {groupedReagents.map(group => {
                 const isLow = group.totalStock <= group.minStock;
                 return (
