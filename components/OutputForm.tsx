@@ -30,6 +30,8 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
   });
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [lastBase64, setLastBase64] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -89,13 +91,10 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     return Array.from(map.values());
   }, [reagents]);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const runAIAnalysis = async (base64: string) => {
     setLoading(true);
+    setAiError(null);
     try {
-      const base64 = await fileToBase64(file);
-      
       // Sort reagents by expiry date (FEFO) to prioritize oldest/expiring reagents first
       const sortedReagents = [...reagents].sort((a, b) => {
         const aExpiry = a.expiryDate === 'N/A' || !a.expiryDate ? '9999-12-31' : a.expiryDate;
@@ -149,10 +148,19 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
       if (found) setSelectedReagentId(found.id);
       else setFormError("Reactivo no encontrado en inventario o sin existencias.");
     } catch (error: any) {
-      setFormError(error.message || "Error al analizar la imagen. Intentá seleccionar manualmente.");
+      console.error(error);
+      setAiError("Los modelos de IA están ocupados en este momento. Podés reintentar en unos segundos o seleccionar el reactivo manualmente.");
     } finally {
-      setLoading(false); 
+      setLoading(false);
     }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base64 = await fileToBase64(file);
+    setLastBase64(base64);
+    await runAIAnalysis(base64);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -270,6 +278,24 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
               )}
             </div>
           </div>
+
+          {aiError && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+              <div className="flex items-start gap-2 flex-1">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium text-amber-800">{aiError}</p>
+              </div>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => lastBase64 && runAIAnalysis(lastBase64)}
+                className="shrink-0 flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-2 rounded-xl transition-all disabled:opacity-50"
+              >
+                {loading ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <ArrowPathIcon className="w-4 h-4" />}
+                Reintentar
+              </button>
+            </div>
+          )}
 
           {selectedReagent && (
             <form onSubmit={handleSubmit} className="space-y-6">
