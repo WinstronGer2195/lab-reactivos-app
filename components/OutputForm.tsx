@@ -94,6 +94,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
   const runAIAnalysis = async (base64: string) => {
     setLoading(true);
     setAiError(null);
+    setFormError(null);
     try {
       // Sort reagents by expiry date (FEFO) to prioritize oldest/expiring reagents first
       const sortedReagents = [...reagents].sort((a, b) => {
