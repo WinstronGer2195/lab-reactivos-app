@@ -21,7 +21,7 @@ import EditReagentModal from './components/EditReagentModal';
 import ExpiryModal from './components/ExpiryModal';
 import { generateId, formatQuantity, normalizeToUnit } from './utils';
 
-// Credenciales en .env.local (VITE_SUPABASE_URL / VITE_SUPABASE_KEY) o en localStorage via Nube Dual
+// Credenciales en .env.local (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) o en localStorage via Nube Dual
 
 const STORAGE_KEY_SUPA_URL = 'reagentflow_supa_url';
 const STORAGE_KEY_SUPA_KEY = 'reagentflow_supa_key';
@@ -112,7 +112,7 @@ const App: React.FC = () => {
   };
 
   const VITE_URL = getEnv('VITE_SUPABASE_URL');
-  const VITE_KEY = getEnv('VITE_SUPABASE_KEY');
+  const VITE_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
 
   // --- Inicialización de Estado ---
   const [supaUrl, setSupaUrl] = useState<string>(
