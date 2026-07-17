@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { Transaction, Reagent, Department } from '../types';
 import { formatDateTime } from '../utils';
 import {
@@ -13,25 +14,75 @@ import {
 interface Props {
   transactions: Transaction[];
   reagents?: Reagent[];
+  supabase?: SupabaseClient | null;
 }
 
-const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
+const mapTransactionRow = (t: any): Transaction => ({
+  ...t,
+  reagentId: t.reagent_id,
+  reagentName: t.reagent_name,
+  reagentBrand: t.reagent_brand || '',
+  displayQuantity: parseFloat(t.display_quantity),
+  displayUnit: t.display_unit,
+  quantity: parseFloat(t.quantity),
+  lot: t.lot || '',
+  verificationStatus: t.verification_status
+});
+
+const HistoryView: React.FC<Props> = ({ transactions, reagents = [], supabase = null }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDepartment, setFilterDepartment] = useState<Department | 'TODOS'>('TODOS');
+  const [dbResults, setDbResults] = useState<Transaction[] | null>(null);
+  const [isSearchingDb, setIsSearchingDb] = useState(false);
+
+  // Búsqueda contra Supabase: la lista base (transactions) solo trae los últimos
+  // 100 movimientos, así que un término de búsqueda puede coincidir con un
+  // movimiento más antiguo que no llegó a cargarse en memoria.
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!supabase || term.length < 2) {
+      setDbResults(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearchingDb(true);
+    const safeTerm = term.replace(/[,()]/g, ' ').trim();
+    const timeoutId = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .or(`reagent_name.ilike.%${safeTerm}%,analyst.ilike.%${safeTerm}%,lot.ilike.%${safeTerm}%,reagent_brand.ilike.%${safeTerm}%`)
+        .order('timestamp', { ascending: false })
+        .limit(200);
+
+      if (cancelled) return;
+      setIsSearchingDb(false);
+      if (!error && data) {
+        setDbResults(data.map(mapTransactionRow));
+      }
+    }, 350);
+
+    return () => { cancelled = true; clearTimeout(timeoutId); };
+  }, [searchTerm, supabase]);
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    const term = searchTerm.trim();
+    const usingDbResults = dbResults !== null && term.length >= 2;
+    const baseList = usingDbResults ? dbResults! : transactions;
+
+    return baseList.filter(t => {
       // Find reagent to get department
       const reagent = reagents.find(r => r.id === t.reagentId);
-      
+
       // Filter by department
       if (filterDepartment !== 'TODOS' && reagent?.department !== filterDepartment) {
         return false;
       }
 
-      // Filter by search term
-      if (searchTerm) {
-        const lowerSearch = searchTerm.toLowerCase();
+      // La búsqueda por texto ya se resolvió en Supabase cuando usingDbResults es true.
+      if (!usingDbResults && term) {
+        const lowerSearch = term.toLowerCase();
         const matchesName = t.reagentName.toLowerCase().includes(lowerSearch);
         const matchesAnalyst = t.analyst.toLowerCase().includes(lowerSearch);
         const matchesLot = t.lot?.toLowerCase().includes(lowerSearch) || false;
@@ -44,7 +95,7 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
 
       return true;
     });
-  }, [transactions, reagents, searchTerm, filterDepartment]);
+  }, [transactions, dbResults, reagents, searchTerm, filterDepartment]);
 
   return (
     <div className="space-y-6">
@@ -64,6 +115,9 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
+            {isSearchingDb && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">buscando…</span>
+            )}
           </div>
           <div className="relative">
             <FunnelIcon className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -162,7 +216,9 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [] }) => {
         </div>
       </div>
       <p className="text-center text-xs text-slate-400 py-3">
-        Mostrando los últimos 100 movimientos. Para el historial completo usá la recuperación desde Nube Dual.
+        {dbResults !== null && searchTerm.trim().length >= 2
+          ? 'Búsqueda contra el historial completo en la nube.'
+          : 'Mostrando los últimos 100 movimientos. Escribí al menos 2 caracteres para buscar en todo el historial.'}
       </p>
     </div>
   );
