@@ -894,7 +894,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </nav>
-        <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Routes>
             <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} onEdit={setEditingReagentId} />} />
             <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} supabase={supabase} />} />

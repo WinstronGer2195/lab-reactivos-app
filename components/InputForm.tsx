@@ -42,7 +42,23 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
   
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownTriggerRef = useRef<HTMLDivElement>(null);
+
+  const toggleDropdown = () => {
+    if (!isDropdownOpen && dropdownTriggerRef.current) {
+      const rect = dropdownTriggerRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: `calc(100dvh - ${rect.bottom + 24}px)`
+      });
+    }
+    setIsDropdownOpen(!isDropdownOpen);
+  };
 
   // Form State
   const [formData, setFormData] = useState({
@@ -416,8 +432,9 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
 
             <div className="relative" ref={dropdownRef}>
               <div
+                ref={dropdownTriggerRef}
                 className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-indigo-500 cursor-pointer flex justify-between items-center h-full"
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                onClick={toggleDropdown}
               >
                 <span className="truncate">
                   {isExisting && selectedReagentId 
@@ -433,7 +450,7 @@ const InputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransa
               </div>
               
               {isDropdownOpen && (
-                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                <div style={dropdownStyle} className="z-50 bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-y-auto">
                   <div className="sticky top-0 bg-white p-2 border-b border-slate-100">
                     <input
                       type="text"

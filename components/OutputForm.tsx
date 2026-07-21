@@ -35,9 +35,26 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
   const [lastBase64, setLastBase64] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const [showFifoAlert, setShowFifoAlert] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownTriggerRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleDropdown = () => {
+    if (!isDropdownOpen && dropdownTriggerRef.current) {
+      const rect = dropdownTriggerRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: `calc(100dvh - ${rect.bottom + 24}px)`
+      });
+    }
+    setIsDropdownOpen(!isDropdownOpen);
+  };
 
   const selectedReagent = useMemo(() => reagents.find(r => r.id === selectedReagentId), [reagents, selectedReagentId]);
 
@@ -85,7 +102,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
   // Si dos lotes tienen vencimiento cargado y el que ingresó primero vence después que
   // el que ingresó luego, se prioriza por vencimiento y se avisa al analista.
   // Sin fecha de vencimiento, se aplica FIFO puro.
-  const { fifoReagents, fifoWarnings } = useMemo(() => {
+  const { fifoReagents, fifoWarningsByName } = useMemo(() => {
     const active = reagents.filter(r => !r.isDeleted && r.currentStock > 0);
 
     const groups = new Map<string, Reagent[]>();
@@ -95,7 +112,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
       groups.get(key)!.push(r);
     });
 
-    const warnings: string[] = [];
+    const warnings = new Map<string, string>();
     const representative: Reagent[] = [];
 
     groups.forEach((items) => {
@@ -127,14 +144,24 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
         }
       }
       if (inverted) {
-        warnings.push(`${items[0].name}: se detectó un lote ingresado antes que vence después que otro ingresado luego. El orden de salida se ajustó por vencimiento — verificar lotes.`);
+        warnings.set(items[0].name.toUpperCase(), `Se detectó un lote de ${items[0].name} ingresado antes que vence después que otro ingresado luego. El orden de salida se ajustó por vencimiento — verificar lotes.`);
       }
 
       representative.push(final[0]);
     });
 
-    return { fifoReagents: representative, fifoWarnings: warnings };
+    return { fifoReagents: representative, fifoWarningsByName: warnings };
   }, [reagents, entryDateByReagentId]);
+
+  // Muestra el aviso FIFO/vencimiento como ventana emergente solo cuando se
+  // selecciona un reactivo que tiene la inconsistencia detectada.
+  useEffect(() => {
+    if (selectedReagent && fifoWarningsByName.has(selectedReagent.name.toUpperCase())) {
+      setShowFifoAlert(true);
+    } else {
+      setShowFifoAlert(false);
+    }
+  }, [selectedReagentId, selectedReagent, fifoWarningsByName]);
 
   const runAIAnalysis = async (base64: string) => {
     setLoading(true);
@@ -264,9 +291,10 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
             <input type="file" ref={fileInputRef} className="hidden" capture="environment" accept="image/*" onChange={handleImageUpload} />
 
             <div className="relative" ref={dropdownRef}>
-              <div 
+              <div
+                ref={dropdownTriggerRef}
                 className="bg-slate-50 border-2 border-slate-200 py-4 px-4 rounded-2xl text-slate-700 font-bold outline-none focus:border-rose-500 cursor-pointer flex justify-between items-center h-full"
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                onClick={toggleDropdown}
               >
                 <span className="truncate">
                   {selectedReagentId 
@@ -280,7 +308,7 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
               </div>
               
               {isDropdownOpen && (
-                <div className="absolute z-10 w-full mt-2 bg-white border-2 border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                <div style={dropdownStyle} className="z-50 bg-white border-2 border-slate-200 rounded-2xl shadow-xl overflow-y-auto">
                   <div className="sticky top-0 bg-white p-2 border-b border-slate-100">
                     <input
                       type="text"
@@ -343,14 +371,21 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTrans
             </div>
           )}
 
-          {fifoWarnings.length > 0 && (
-            <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-4 mb-4 flex items-start gap-2">
-              <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-amber-800">Aviso de orden de salida (FIFO/vencimiento)</p>
-                <ul className="text-xs text-amber-700 font-medium list-disc pl-4 mt-1 space-y-0.5">
-                  {fifoWarnings.map((w, i) => <li key={i}>{w}</li>)}
-                </ul>
+          {showFifoAlert && selectedReagent && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowFifoAlert(false)}>
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="bg-amber-50 p-6 border-b border-amber-100 flex items-center gap-3">
+                  <ExclamationTriangleIcon className="w-8 h-8 text-amber-500 shrink-0" />
+                  <h3 className="font-bold text-slate-800">Aviso de orden FIFO/vencimiento</h3>
+                </div>
+                <div className="p-6">
+                  <p className="text-sm text-slate-600">{fifoWarningsByName.get(selectedReagent.name.toUpperCase())}</p>
+                </div>
+                <div className="p-4 border-t border-slate-100">
+                  <button onClick={() => setShowFifoAlert(false)} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors">
+                    Entendido
+                  </button>
+                </div>
               </div>
             </div>
           )}
