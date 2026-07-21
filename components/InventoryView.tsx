@@ -107,7 +107,67 @@ const InventoryView: React.FC<Props> = ({ reagents, userRole, onDelete, onEdit }
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Vista de tarjetas para celular */}
+      <div className="sm:hidden space-y-3">
+        {groupedReagents.length === 0 && (
+          <div className="bg-white rounded-3xl border border-slate-200 px-6 py-16 text-center">
+            <BeakerIcon className="w-12 h-12 text-slate-200 mx-auto mb-3" />
+            <p className="font-bold text-slate-500 text-sm">
+              {search || deptFilter !== 'all'
+                ? 'Ningún reactivo coincide con el filtro aplicado.'
+                : 'El inventario está vacío. Registrá el primer ingreso.'}
+            </p>
+          </div>
+        )}
+        {groupedReagents.map(group => {
+          const isLow = group.totalStock <= group.minStock;
+          return (
+            <div key={`${group.name}-${group.department}`} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-800 truncate">{group.name}</div>
+                  <div className="text-[10px] text-indigo-500 font-black uppercase tracking-tighter">{group.department}</div>
+                </div>
+                {isLow ? (
+                  <span className="shrink-0 px-3 py-1 rounded-full text-[9px] font-black bg-red-100 text-red-700 border border-red-200 uppercase tracking-widest whitespace-nowrap">Stock Bajo</span>
+                ) : (
+                  <span className="shrink-0 px-3 py-1 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-widest whitespace-nowrap">OK</span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {group.brands.map((b, idx) => (
+                  <div key={idx} className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg text-[10px] font-bold border ${b.stock <= 0.01 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                    <span>{b.brand}: {b.stock} {b.originalUnit}</span>
+                    {userRole === 'GERENTE' && (
+                      <div className="flex items-center ml-1">
+                        <button onClick={(e) => { e.stopPropagation(); onEdit(b.id); }} className="text-slate-400 hover:text-indigo-500 transition-colors p-0.5" title="Editar reactivo">
+                          <PencilIcon className="w-3.5 h-3.5" />
+                        </button>
+                        {b.stock <= 0.01 && (
+                          <button onClick={(e) => { e.stopPropagation(); onDelete(b.id); }} className="text-slate-400 hover:text-red-500 transition-colors p-0.5 ml-1" title="Eliminar reactivo vacío y su historial">
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-end pt-2 border-t border-slate-100">
+                <div className={`text-sm font-black ${isLow ? 'text-red-600' : 'text-slate-800'}`}>
+                  {group.totalStock} {group.baseUnit}
+                </div>
+                <div className="text-[9px] text-slate-400 font-black uppercase">Mín: {group.minStock} {group.baseUnit}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Vista de tabla para tablet y computadora */}
+      <div className="hidden sm:block bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto scrollbar-hide">
           <table className="w-full text-left min-w-[600px]">
             <thead className="bg-slate-50 border-b border-slate-200">

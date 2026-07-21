@@ -14,12 +14,13 @@ import {
 interface Props {
   reagents: Reagent[];
   analysts: AnalystUser[];
+  transactions: Transaction[];
   onTransaction: (reagent: Partial<Reagent>, data: any) => void;
   currentUser: AnalystUser | null;
   userRole: UserRole | null;
 }
 
-const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, currentUser, userRole }) => {
+const OutputForm: React.FC<Props> = ({ reagents, analysts, transactions, onTransaction, currentUser, userRole }) => {
   const [loading, setLoading] = useState(false);
   const [selectedReagentId, setSelectedReagentId] = useState('');
   const [outputMode, setOutputMode] = useState<'CONTAINER' | 'QUANTITY'>('CONTAINER');
@@ -66,30 +67,74 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
     return formatQuantity(val, selectedReagent.presentation);
   }, [outputMode, formData, selectedReagent]);
 
-  const fifoReagents = useMemo(() => {
-    // Sort reagents by expiry date (FEFO) to prioritize oldest/expiring reagents first
-    const sortedReagents = [...reagents].sort((a, b) => {
-      const aExpiry = a.expiryDate === 'N/A' || !a.expiryDate ? '9999-12-31' : a.expiryDate;
-      const bExpiry = b.expiryDate === 'N/A' || !b.expiryDate ? '9999-12-31' : b.expiryDate;
-      
-      if (aExpiry !== bExpiry) {
-        return new Date(aExpiry).getTime() - new Date(bExpiry).getTime();
-      }
-      
-      // If expiry dates are the same, prioritize the one with less stock to finish open bottles
-      return a.currentStock - b.currentStock;
+  // Fecha de ingreso real de cada lote: la primera transacción de tipo IN registrada para ese id.
+  // Si no hay ninguna (ej. datos migrados), se usa lastUpdated como respaldo.
+  const entryDateByReagentId = useMemo(() => {
+    const map = new Map<string, string>();
+    transactions.forEach(t => {
+      if (t.type !== 'IN') return;
+      const current = map.get(t.reagentId);
+      if (!current || t.timestamp < current) map.set(t.reagentId, t.timestamp);
+    });
+    return map;
+  }, [transactions]);
+
+  const getEntryDate = (r: Reagent) => entryDateByReagentId.get(r.id) || r.lastUpdated;
+
+  // Orden de salida: FIFO (por ingreso) salvo que el vencimiento indique lo contrario.
+  // Si dos lotes tienen vencimiento cargado y el que ingresó primero vence después que
+  // el que ingresó luego, se prioriza por vencimiento y se avisa al analista.
+  // Sin fecha de vencimiento, se aplica FIFO puro.
+  const { fifoReagents, fifoWarnings } = useMemo(() => {
+    const active = reagents.filter(r => !r.isDeleted && r.currentStock > 0);
+
+    const groups = new Map<string, Reagent[]>();
+    active.forEach(r => {
+      const key = r.name.toUpperCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(r);
     });
 
-    const map = new Map<string, Reagent>();
-    for (const r of sortedReagents) {
-      if (r.isDeleted || r.currentStock <= 0) continue;
-      const nameKey = r.name.toUpperCase();
-      if (!map.has(nameKey)) {
-        map.set(nameKey, r);
+    const warnings: string[] = [];
+    const representative: Reagent[] = [];
+
+    groups.forEach((items) => {
+      const hasExpiry = (r: Reagent) => !!r.expiryDate && r.expiryDate !== 'N/A';
+
+      const final = [...items].sort((a, b) => {
+        const aHas = hasExpiry(a), bHas = hasExpiry(b);
+        if (aHas && bHas) {
+          if (a.expiryDate !== b.expiryDate) {
+            return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+          }
+          return getEntryDate(a).localeCompare(getEntryDate(b));
+        }
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return getEntryDate(a).localeCompare(getEntryDate(b));
+      });
+
+      // Detecta inversiones: un lote ingresado antes que vence después que uno ingresado luego.
+      let inverted = false;
+      for (let i = 0; i < items.length && !inverted; i++) {
+        for (let j = i + 1; j < items.length && !inverted; j++) {
+          const a = items[i], b = items[j];
+          if (!hasExpiry(a) || !hasExpiry(b)) continue;
+          const aEntry = getEntryDate(a), bEntry = getEntryDate(b);
+          const [first, second] = aEntry <= bEntry ? [a, b] : [b, a];
+          if (new Date(first.expiryDate).getTime() > new Date(second.expiryDate).getTime()) {
+            inverted = true;
+          }
+        }
       }
-    }
-    return Array.from(map.values());
-  }, [reagents]);
+      if (inverted) {
+        warnings.push(`${items[0].name}: se detectó un lote ingresado antes que vence después que otro ingresado luego. El orden de salida se ajustó por vencimiento — verificar lotes.`);
+      }
+
+      representative.push(final[0]);
+    });
+
+    return { fifoReagents: representative, fifoWarnings: warnings };
+  }, [reagents, entryDateByReagentId]);
 
   const runAIAnalysis = async (base64: string) => {
     setLoading(true);
@@ -295,6 +340,18 @@ const OutputForm: React.FC<Props> = ({ reagents, analysts, onTransaction, curren
                 {loading ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <ArrowPathIcon className="w-4 h-4" />}
                 Reintentar
               </button>
+            </div>
+          )}
+
+          {fifoWarnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-4 mb-4 flex items-start gap-2">
+              <ExclamationTriangleIcon className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">Aviso de orden de salida (FIFO/vencimiento)</p>
+                <ul className="text-xs text-amber-700 font-medium list-disc pl-4 mt-1 space-y-0.5">
+                  {fifoWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              </div>
             </div>
           )}
 

@@ -147,7 +147,23 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
         
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
           {notifications.length > 0 ? (
-            <div className="overflow-x-auto">
+            <>
+            <div className="sm:hidden divide-y divide-slate-100">
+              {notifications.map((n) => (
+                <div key={n.id} className="p-4 space-y-1">
+                  <div className="flex justify-between items-start gap-2">
+                    <p className="font-bold text-slate-800 text-sm">{n.reagentName}</p>
+                    <span className="shrink-0 px-2 py-0.5 bg-red-50 text-red-700 rounded-md font-bold text-[10px] border border-red-100">{n.stockLevel}</span>
+                  </div>
+                  <p className="text-xs text-indigo-600 font-medium">{n.targetEmail}</p>
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                    <ClockIcon className="w-3.5 h-3.5" />
+                    {formatDateTime(n.timestamp)}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
@@ -178,6 +194,7 @@ const AlertsView: React.FC<Props> = ({ reagents, markAsOrdered, onUpdateMinStock
                 </tbody>
               </table>
             </div>
+            </>
           ) : (
             <div className="p-10 text-center text-slate-400 italic">
               No hay registro de alertas enviadas recientemente.

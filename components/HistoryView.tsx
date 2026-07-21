@@ -135,7 +135,68 @@ const HistoryView: React.FC<Props> = ({ transactions, reagents = [], supabase = 
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      {/* Vista de tarjetas para celular */}
+      <div className="sm:hidden space-y-3">
+        {filteredTransactions.length === 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 px-6 py-16 text-center">
+            {transactions.length === 0 ? (
+              <div className="flex flex-col items-center gap-3">
+                <ClipboardDocumentListIcon className="w-12 h-12 text-slate-200" />
+                <p className="font-bold text-slate-500 text-sm">No hay movimientos registrados todavía.</p>
+                <p className="text-xs text-slate-400">Los ingresos, salidas y ajustes del gerente aparecerán aquí.</p>
+              </div>
+            ) : (
+              <p className="text-slate-500 text-sm">No se encontraron movimientos que coincidan con la búsqueda.</p>
+            )}
+          </div>
+        )}
+        {filteredTransactions.map(t => (
+          <div key={t.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-2">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-800 text-sm truncate">{t.reagentName}</p>
+                <p className="text-xs text-slate-500 truncate">{t.reagentBrand || reagents.find(r => r.id === t.reagentId)?.brand || '-'}{t.lot ? ` · Lote: ${t.lot}` : ''}</p>
+              </div>
+              {t.type === 'IN' && (
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-emerald-600 bg-emerald-50">
+                  <ArrowDownCircleIcon className="w-3 h-3" /> Entrada
+                </span>
+              )}
+              {t.type === 'OUT' && (
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-rose-600 bg-rose-50">
+                  <ArrowUpCircleIcon className="w-3 h-3" /> Salida
+                </span>
+              )}
+              {t.type !== 'IN' && t.type !== 'OUT' && (
+                <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded text-amber-600 bg-amber-50">
+                  <AdjustmentsHorizontalIcon className="w-3 h-3" /> Ajuste
+                </span>
+              )}
+            </div>
+
+            <div className="flex justify-between items-end pt-2 border-t border-slate-100">
+              <div>
+                <p className="text-sm font-medium text-slate-700">{t.displayQuantity} {t.displayUnit}</p>
+                <p className="text-xs font-bold text-slate-900">
+                  {Math.round(t.quantity * 10000) / 10000}{' '}
+                  <span className="text-[10px] text-slate-400 uppercase">{reagents.find(r => r.id === t.reagentId)?.baseUnit || 'UNID.'}</span>
+                </p>
+              </div>
+              <div className="text-right">
+                {t.verificationStatus && (
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-tight px-2 py-1 rounded ${t.verificationStatus === 'Conforme' ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'}`}>
+                    {t.verificationStatus}
+                  </span>
+                )}
+                <p className="text-[10px] text-slate-500 mt-1">{t.analyst}</p>
+                <p className="text-[10px] text-slate-400">{formatDateTime(t.timestamp)}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-slate-50 border-b border-slate-200">

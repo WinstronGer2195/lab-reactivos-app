@@ -70,6 +70,8 @@ const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal
         { path: '/', icon: HomeIcon, label: 'Inicio' },
         { path: '/ingreso', icon: PlusCircleIcon, label: 'Entra' },
         { path: '/salida', icon: MinusCircleIcon, label: 'Sale' },
+        { path: '/historial', icon: ClockIcon, label: 'Histo' },
+        { path: '/alertas', icon: BellAlertIcon, label: 'Alertas' },
         { path: '/nube', icon: CloudIcon, label: 'Nube' },
         { path: '/config', icon: Cog6ToothIcon, label: 'Config' },
       ]
@@ -84,9 +86,9 @@ const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal
     return Math.ceil((new Date(r.expiryDate).getTime() - Date.now()) / 86400000) <= 30;
   }).length;
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center h-16 px-1 z-50 overflow-x-auto scrollbar-hide">
       {navItems.map(item => (
-        <Link key={item.path} to={item.path} className={`relative flex flex-col items-center justify-center w-full h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
+        <Link key={item.path} to={item.path} className={`relative flex flex-col items-center justify-center shrink-0 min-w-[15%] h-full transition-colors ${location.pathname === item.path ? 'text-indigo-600' : 'text-slate-400'}`}>
           <item.icon className="w-6 h-6" />
           {item.path === '/nube' && syncQueueCount > 0 && (
             <span className="absolute top-1 right-2 bg-amber-500 text-white text-[9px] font-black rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
@@ -96,7 +98,7 @@ const MobileNav: React.FC<MobileNavProps> = ({ role, reagents, onOpenExpiryModal
           <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">{item.label}</span>
         </Link>
       ))}
-      <button onClick={onOpenExpiryModal} className="relative flex flex-col items-center justify-center w-full h-full transition-colors text-slate-400 hover:text-indigo-600">
+      <button onClick={onOpenExpiryModal} className="relative flex flex-col items-center justify-center shrink-0 min-w-[15%] h-full transition-colors text-slate-400 hover:text-indigo-600">
         <CalendarDaysIcon className="w-6 h-6" />
         {urgentCount > 0 && <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">{urgentCount}</span>}
         <span className="text-[10px] font-bold mt-1 uppercase tracking-tighter">Vence</span>
@@ -840,16 +842,16 @@ const App: React.FC = () => {
 
   return (
     <Router>
-      <div className="flex flex-col min-h-screen bg-slate-50 pb-20 md:pb-0">
+      <div className="flex flex-col min-h-screen bg-slate-50 pb-20 lg:pb-0">
         {toast && (
           <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${toast.type === 'alert' ? 'bg-amber-600 text-white' : toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-slate-900 text-white'}`}>
             <span className="font-bold text-sm">{toast.message}</span>
           </div>
         )}
-        <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm hidden md:block">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between h-16">
+        <nav className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm hidden lg:block">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center min-h-16 py-2 gap-y-2">
             <div className="flex items-center gap-2"><BeakerIcon className="h-8 w-8 text-indigo-600" /><span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-500">ReagentFlow</span></div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 justify-end">
               <Link to="/" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Inventario</Link>
               <Link to="/ingreso" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Ingresos</Link>
               <Link to="/salida" className="text-slate-600 hover:text-indigo-600 font-bold text-sm">Salidas</Link>
@@ -896,7 +898,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/" element={<InventoryView reagents={reagents} userRole={role} onDelete={handleDeleteReagent} onEdit={setEditingReagentId} />} />
             <Route path="/ingreso" element={<InputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} transactions={transactions} currentUser={currentUser} userRole={role} supabase={supabase} />} />
-            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
+            <Route path="/salida" element={<OutputForm reagents={reagents} analysts={analysts} transactions={transactions} onTransaction={handleTransaction} currentUser={currentUser} userRole={role} />} />
             <Route path="/historial" element={<HistoryView transactions={transactions} reagents={reagents} supabase={supabase} />} />
             <Route path="/alertas" element={role === 'GERENTE' ? <AlertsView reagents={reagents} markAsOrdered={handleMarkAsOrdered} onUpdateMinStock={() => {}} notifications={notifications} /> : <Navigate to="/" />} />
             <Route path="/nube" element={role === 'GERENTE' ? <CloudSyncView supaUrl={supaUrl} setSupaUrl={(url) => { setSupaUrl(url); localStorage.setItem(STORAGE_KEY_SUPA_URL, url); }} supaKey={supaKey} setSupaKey={(key) => { setSupaKey(key); localStorage.setItem(STORAGE_KEY_SUPA_KEY, key); }} cloudUrl={cloudUrl} setCloudUrl={(url) => { setCloudUrl(url); localStorage.setItem(STORAGE_KEY_CLOUD_URL, url); saveConfigKey('cloud_url', url); }} showToast={showToast} onSync={pullData} onRecoverHistory={handleRecoverHistory} /> : <Navigate to="/" />} />
